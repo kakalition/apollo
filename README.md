@@ -132,6 +132,19 @@ uv run apollo telegram
 Send the bot a message and talk normally: *"remind me to call the bank tomorrow"*,
 *"log a 6 for sleep"*, *"what should I focus on today?"*
 
+### Why Chroma runs as a server (not embedded)
+
+Chroma's embedded mode (`PersistentClient(path=…)`) takes an **exclusive file lock
+and is single-process only**. Apollo is deliberately split across processes that all
+touch memory — `worker` (writes), `dispatcher`, and `mcp`/agents (reads) — so an
+embedded store can't be shared. Chroma therefore runs as a local server on loopback,
+and Mem0 connects over HTTP.
+
+That is still local-first: the vector store never leaves your machine. Start it with
+`uv run chroma run --path ./data/chroma --port 8000` (version-matched to `uv.lock`);
+`docker-compose.yml` is an optional convenience for the same server, not a
+requirement. See [`docs/FEATURES.md`](docs/FEATURES.md) for details.
+
 ## Configuration
 
 Non-secret settings live in `apollo.toml`; secrets live in `.env` (0600, git-ignored).
