@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import signal
 import socket
-import time
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -55,23 +55,23 @@ class Worker:
     def __init__(self, runtime: Runtime, worker_id: str | None = None) -> None:
         self.runtime = runtime
         self.worker_id = worker_id or f"{socket.gethostname()}:{id(self) & 0xFFFF:x}"
-        self._stop = False
+        self._stop = threading.Event()
         self._handlers = _load_handlers()
 
     def request_stop(self, *_: object) -> None:
-        self._stop = True
+        self._stop.set()
 
     def run(self, *, once: bool = False) -> None:
         if not once:
             signal.signal(signal.SIGINT, self.request_stop)
             signal.signal(signal.SIGTERM, self.request_stop)
         log.info("worker.start", worker=self.worker_id, once=once)
-        while not self._stop:
+        while not self._stop.is_set():
             handled = self._process_one()
             if once and not handled:
                 break
             if not handled:
-                time.sleep(POLL_INTERVAL_SECONDS)
+                self._stop.wait(POLL_INTERVAL_SECONDS)
         log.info("worker.stop", worker=self.worker_id)
 
     def _process_one(self) -> bool:

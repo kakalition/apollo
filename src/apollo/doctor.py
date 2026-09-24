@@ -186,7 +186,7 @@ def _check_chroma(settings: Settings, client: httpx.Client) -> CheckResult:
         "chroma",
         ok=False,
         detail=f"{base} unreachable",
-        fallback="start with `chroma run --path ./data/chroma --port 8000` or `docker compose up chroma`",
+        fallback="start with `uv run chroma run --path ./data/chroma --port 8000` (or `scripts/run.sh start`)",
     )
 
 

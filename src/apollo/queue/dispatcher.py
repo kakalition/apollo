@@ -9,7 +9,7 @@ single-dispatcher invariant.
 from __future__ import annotations
 
 import signal
-import time
+import threading
 from typing import TYPE_CHECKING, Any
 
 from apollo.db.repositories import infra
@@ -30,11 +30,12 @@ class Dispatcher:
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
         self.interval = max(5, runtime.settings.scheduler.tick_seconds)
-        self._stop = False
+        self._stop = threading.Event()
         self._holds_lock = False
 
     def request_stop(self, *_: object) -> None:
-        self._stop = True
+        # Interruptible: the run loop waits on this event, so shutdown is immediate.
+        self._stop.set()
 
     def run(self, *, once: bool = False) -> None:
         if not once:
@@ -45,11 +46,11 @@ class Dispatcher:
             raise SystemExit("another dispatcher already holds the lock")
         log.info("dispatcher.start", interval=self.interval)
         try:
-            while not self._stop:
+            while not self._stop.is_set():
                 self.tick()
                 if once:
                     break
-                time.sleep(self.interval)
+                self._stop.wait(self.interval)
         finally:
             self._release_lock()
             log.info("dispatcher.stop")

@@ -116,17 +116,23 @@ uv sync --extra memory          # add --extra voice, --extra local-embeddings as
 cp .env.example .env && chmod 600 .env   # provider key, model ids, Telegram token
 $EDITOR apollo.toml                       # timezone, tiers, autonomy, MCP servers
 
-# 3. Create the database and seed built-in routines
-uv run apollo init-db
-
-# 4. Verify everything is reachable
+# 3. Verify everything is reachable
 uv run apollo doctor
 
-# 5. Run (separate terminals, or scripts/run.sh start)
-uv run chroma run --path ./data/chroma --port 8000   # memory
-uv run apollo dispatcher
-uv run apollo worker
-uv run apollo telegram
+# 4. Start the whole stack (Chroma + dispatcher + worker + Telegram)
+scripts/run.sh start
+```
+
+That's it — `scripts/run.sh` is the single entrypoint. It installs dependencies if
+needed, creates the database, starts Chroma and waits for it to be healthy, then
+brings up the dispatcher, worker and Telegram bot, and reports status.
+
+```text
+scripts/run.sh              # start everything (idempotent)
+scripts/run.sh status       # ●/○ for each component
+scripts/run.sh logs worker  # tail a component log
+scripts/run.sh stop         # stop everything
+scripts/run.sh restart
 ```
 
 Send the bot a message and talk normally: *"remind me to call the bank tomorrow"*,
@@ -140,10 +146,10 @@ touch memory — `worker` (writes), `dispatcher`, and `mcp`/agents (reads) — s
 embedded store can't be shared. Chroma therefore runs as a local server on loopback,
 and Mem0 connects over HTTP.
 
-That is still local-first: the vector store never leaves your machine. Start it with
-`uv run chroma run --path ./data/chroma --port 8000` (version-matched to `uv.lock`);
-`docker-compose.yml` is an optional convenience for the same server, not a
-requirement. See [`docs/FEATURES.md`](docs/FEATURES.md) for details.
+That is still local-first: the vector store never leaves your machine. `scripts/run.sh`
+starts it for you with `uv run chroma run --path ./data/chroma --port 8000`
+(version-matched to `uv.lock`); no container runtime is required. See
+[`docs/FEATURES.md`](docs/FEATURES.md) for details.
 
 ## Configuration
 
@@ -296,7 +302,7 @@ apollo/
   apollo.toml  .env.example  pyproject.toml  alembic.ini
   assets/                    logo & brand assets
   docs/                      features & use cases
-  scripts/                   run.sh, launchd/systemd templates
+  scripts/                   run.sh (one-command stack), launchd/systemd templates
   skills/                    built-in skills (markdown + optional tools.py)
   src/apollo/
     domain/  db/  queue/  agents/  skills/  tools/
