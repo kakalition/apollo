@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/apollo-logo.png" alt="Apollo logo" width="148" />
+
 # Apollo
 
 **A single-user, local-first personal agent platform.**
@@ -279,6 +281,7 @@ CI runs lint, types and tests on every push. Contributions are welcome — see
 ```text
 apollo/
   apollo.toml  .env.example  pyproject.toml  alembic.ini
+  assets/                    logo & brand assets
   docs/                      features & use cases
   scripts/                   run.sh, launchd/systemd templates
   skills/                    built-in skills (markdown + optional tools.py)

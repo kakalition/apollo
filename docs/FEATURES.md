@@ -1,4 +1,10 @@
+<div align="center">
+
+<img src="../assets/apollo-logo.png" alt="Apollo logo" width="96" />
+
 # Apollo — Features & Use Cases
+
+</div>
 
 Apollo is a **single-user, local-first personal operating system**. You declare goals,
 Apollo turns them into practices / projects / tasks / habits / metrics, a scheduler
