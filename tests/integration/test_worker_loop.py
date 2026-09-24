@@ -1,0 +1,124 @@
+"""Worker loop and the full outbox → job → run → notification path."""
+
+from __future__ import annotations
+
+from sqlalchemy import select
+
+from apollo.db import tables as t
+from apollo.queue.jobs import enqueue_job
+from apollo.queue.worker import Worker
+from apollo.telegram.outbox_drain import NotificationDrainer
+from tests.fakes import fake_api
+
+
+def test_worker_processes_vault_sync(runtime, settings) -> None:
+    (settings.vault_path / "notes").mkdir(parents=True, exist_ok=True)
+    (settings.vault_path / "notes" / "a.md").write_text("# Note\n\nSomething memorable.")
+    with runtime.db.write() as session:
+        enqueue_job(session, kind="vault.sync")
+
+    Worker(runtime, worker_id="test-worker").run(once=True)
+
+    with runtime.db.session() as session:
+        jobs = list(session.execute(select(t.Job)).scalars())
+        entries = list(session.execute(select(t.JournalEntry)).scalars())
+    assert jobs[0].status == "done"
+    assert len(entries) == 1
+
+
+def test_worker_marks_unknown_kind_dead(runtime) -> None:
+    with runtime.db.write() as session:
+        job = enqueue_job(session, kind="not.a.kind")
+    Worker(runtime, worker_id="w").run(once=True)
+    with runtime.db.session() as session:
+        stored = session.get(t.Job, job.id)
+        assert stored is not None and stored.status == "dead"
+
+
+def test_notification_drain_sends_and_marks(runtime, settings, clock) -> None:
+    from apollo.db.repositories import infra
+
+    with runtime.db.write() as session:
+        infra.enqueue_notification(
+            session,
+            kind="generic",
+            ref_id="1",
+            payload={"text": "Hello", "topic": "system"},
+            scheduled_for=clock.now(),
+        )
+    api = fake_api()
+    drainer = NotificationDrainer(api, runtime, chat_id=42)
+
+    import asyncio
+
+    sent = asyncio.run(drainer.drain(limit=10, clock=clock))
+    assert sent == 1
+    with runtime.db.session() as session:
+        rows = list(session.execute(select(t.Notification)).scalars())
+    assert rows[0].status == "sent"
+
+
+def test_notification_idempotency_key(runtime) -> None:
+    from apollo.db.repositories import infra
+
+    with runtime.db.write() as session:
+        first = infra.enqueue_notification(session, kind="briefing", ref_id="2026-03-02", payload={"text": "a"})
+    with runtime.db.write() as session:
+        second = infra.enqueue_notification(session, kind="briefing", ref_id="2026-03-02", payload={"text": "b"})
+    assert first.id == second.id
+    with runtime.db.session() as session:
+        assert len(list(session.execute(select(t.Notification)).scalars())) == 1
+
+
+class _CapturingAPI:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def send_message(self, chat_id, text, **kwargs):
+        self.calls.append({"chat_id": chat_id, "text": text, **kwargs})
+        return None
+
+
+def _deliver_one(runtime, clock, topic: str = "system") -> dict:
+    import asyncio
+
+    from apollo.db.repositories import infra
+    from apollo.telegram.outbox_drain import NotificationDrainer
+
+    with runtime.db.write() as session:
+        infra.enqueue_notification(
+            session,
+            kind="routing-test",
+            ref_id=topic,
+            payload={"text": "hello", "topic": topic},
+            scheduled_for=clock.now(),
+        )
+    api = _CapturingAPI()
+    asyncio.run(
+        NotificationDrainer(api, runtime, chat_id=42).drain(  # pyright: ignore[reportArgumentType]
+            limit=5, clock=clock
+        )
+    )
+    return api.calls[-1]
+
+
+def test_notifications_use_main_chat_when_topics_disabled(runtime, clock) -> None:
+    from apollo.db.repositories import infra
+    from apollo.telegram.topics import TOPICS_KEY
+
+    runtime.settings.telegram.topic_routing = False
+    with runtime.db.write() as session:
+        infra.set_setting(session, TOPICS_KEY, {"chat_id": 42, "threads": {"system": 999}})
+    call = _deliver_one(runtime, clock)
+    assert call["message_thread_id"] is None
+
+
+def test_notifications_use_topic_when_routing_enabled(runtime, clock) -> None:
+    from apollo.db.repositories import infra
+    from apollo.telegram.topics import TOPICS_KEY
+
+    runtime.settings.telegram.topic_routing = True
+    with runtime.db.write() as session:
+        infra.set_setting(session, TOPICS_KEY, {"chat_id": 42, "threads": {"system": 999}})
+    call = _deliver_one(runtime, clock, topic="system")
+    assert call["message_thread_id"] == 999

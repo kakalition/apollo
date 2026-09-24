@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd template for Apollo (macOS).
+  Install:  cp scripts/com.apollo.plist ~/Library/LaunchAgents/
+            launchctl load ~/Library/LaunchAgents/com.apollo.plist
+  Replace __APOLLO_ROOT__ with the absolute path to this repository.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.apollo.stack</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__APOLLO_ROOT__/scripts/run.sh</string>
+        <string>start</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__APOLLO_ROOT__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>__APOLLO_ROOT__/data/run/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__APOLLO_ROOT__/data/run/launchd.err</string>
+</dict>
+</plist>

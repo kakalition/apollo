@@ -1,0 +1,18 @@
+# systemd user unit template for Apollo.
+# Install:  sed "s#__APOLLO_ROOT__#$PWD#g" scripts/apollo.service > ~/.config/systemd/user/apollo.service
+#           systemctl --user daemon-reload && systemctl --user enable --now apollo.service
+[Unit]
+Description=Apollo personal agent stack (chroma + dispatcher + worker + telegram)
+After=network-online.target
+
+[Service]
+Type=forking
+WorkingDirectory=__APOLLO_ROOT__
+ExecStart=__APOLLO_ROOT__/scripts/run.sh start
+ExecStop=__APOLLO_ROOT__/scripts/run.sh stop
+PIDFile=__APOLLO_ROOT__/data/run/telegram.pid
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

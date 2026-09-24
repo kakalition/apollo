@@ -1,0 +1,91 @@
+# Apollo non-secret configuration. Secrets live in .env (see .env.example).
+
+[app]
+name = "Apollo"
+timezone = "America/New_York"
+data_dir = "data"
+vault_dir = "data/vault"
+db_path = "data/apollo.db"
+log_level = "INFO"
+log_json = true
+# Tracing is opt-in. Set logfire_token (or install the OTel SDK) to enable.
+otel_enabled = false
+
+# ---------------------------------------------------------------------------
+# Provider — OpenAI-compatible chat completions endpoint.
+# base_url/api_key come from .env (APOLLO_PROVIDER__BASE_URL / __API_KEY).
+# Model ids below are mirrored from the `commandcode` provider in kilo.json.
+# ---------------------------------------------------------------------------
+[provider]
+tiers = { triage = "deepseek/deepseek-v4-flash-fast", plan = "claude-opus-5", coach = "claude-opus-5", research = "gpt-5.6-sol", memory = "deepseek/deepseek-v4-flash" }
+
+[embeddings]
+# Primary embeddings model id on the main provider. Probe with `apollo doctor`.
+model = "text-embedding-3-small"
+# Fallback chain: "provider" (a second OpenAI-compatible endpoint) then "local" (fastembed).
+fallback = "local"
+local_model = "BAAI/bge-small-en-v1.5"
+
+# ---------------------------------------------------------------------------
+# Telegram — do not put the token here, it belongs in .env.
+# ---------------------------------------------------------------------------
+[telegram]
+# Single-chat mode: natural language goes through the supervisor. Set true to use
+# private-chat topics (requires enabling Topics in Private Chats in BotFather).
+topic_routing = false
+quiet_hours = { start = "22:00", end = "07:00" }
+rate_limit_per_second = 1.0
+poll_timeout = 30
+
+# ---------------------------------------------------------------------------
+# Memory (Mem0 over a local Chroma server).
+# ---------------------------------------------------------------------------
+[memory]
+enabled = true
+chroma_url = "http://localhost:8000"
+collection = "apollo"
+top_k = 6
+
+# ---------------------------------------------------------------------------
+# Autonomy — read is free, mutate is auto-but-audited, irreversible needs approval.
+# ---------------------------------------------------------------------------
+[autonomy]
+default_tier = "mutate"
+irreversible = ["calendar.delete_event", "web.send", "vault.delete", "telegram.send_payment"]
+
+# ---------------------------------------------------------------------------
+# Scheduling defaults.
+# ---------------------------------------------------------------------------
+[scheduler]
+tick_seconds = 60
+max_attempts = 5
+
+# ---------------------------------------------------------------------------
+# Vault.
+# ---------------------------------------------------------------------------
+[vault]
+root = "data/vault"
+sync_interval_seconds = 300
+
+# ---------------------------------------------------------------------------
+# MCP client registry. Each server is default-deny until tools are allowlisted.
+# ---------------------------------------------------------------------------
+[mcp.servers.vault]
+transport = "stdio"
+command = ["uv", "run", "python", "-m", "apollo.mcp.vault_server"]
+cwd = "."
+allowlist = ["read", "write", "search"]
+namespace = "vault"
+env = { APOLLO_VAULT_ROOT = "data/vault" }
+
+# [mcp.servers.calendar]
+# transport = "stdio"
+# command = ["npx", "-y", "@modelcontextprotocol/server-google-calendar"]
+# allowlist = ["list_events", "create_event"]
+# namespace = "calendar"
+
+# [mcp.servers.web]
+# transport = "streamable-http"
+# url = "https://example.invalid/mcp"
+# allowlist = ["search", "fetch"]
+# namespace = "web"
