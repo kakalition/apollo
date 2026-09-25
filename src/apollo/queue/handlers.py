@@ -108,14 +108,24 @@ def handle_notify_send(ctx: JobContext) -> dict[str, Any]:
     payload = ctx.payload
     kind = payload.get("kind") or payload.get("event") or "generic"
     ref_id = str(payload.get("ref_id") or payload.get("event") or "generic")
+    body = payload.get("payload")
+    if not isinstance(body, dict) or not body:
+        # Tolerate rules that put the message fields at the top level.
+        body = {
+            key: payload[key]
+            for key in ("text", "topic", "format", "buttons", "actions", "rich", "urgent")
+            if key in payload
+        }
+    if not body.get("text") and not body.get("rich"):
+        return {"skipped": True, "reason": "empty notification"}
     with ctx.write() as session:
         notification = infra.enqueue_notification(
             session,
             kind=kind,
             ref_id=ref_id,
             period=payload.get("period"),
-            payload=payload.get("payload") or {"text": payload.get("text", "")},
-            urgent=bool(payload.get("urgent", False)),
+            payload=body,
+            urgent=bool(payload.get("urgent") or body.get("urgent", False)),
             scheduled_for=_parse_when(payload.get("scheduled_for")),
         )
         notification_id = notification.id

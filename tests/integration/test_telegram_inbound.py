@@ -120,3 +120,58 @@ def test_provision_topics_persists_thread_ids(runtime) -> None:
     with runtime.db.session() as session:
         reloaded = TopicRouter.load(session)
     assert reloaded.slug_for_thread(reloaded.thread_for("inbox")) == "inbox"
+
+
+class _CapturingAPI:
+    """Records outbound send_message payloads for command tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def send_message(self, chat_id, text, **kwargs):
+        self.calls.append({"chat_id": chat_id, "text": text, **kwargs})
+        return None
+
+    async def set_message_reaction(self, *args, **kwargs):
+        return True
+
+
+def _message(text: str) -> Message:
+    return Message.model_validate(
+        {
+            "message_id": 1,
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "first_name": "K"},
+            "text": text,
+        }
+    )
+
+
+def test_start_help_renders_html_and_clears_keyboard(runtime) -> None:
+    runtime.settings.telegram.topic_routing = False
+    api = _CapturingAPI()
+    asyncio.run(
+        dispatch(runtime, api, Update(update_id=1, message=_message("/start")), TopicRouter())  # pyright: ignore[reportArgumentType]
+    )
+    assert api.calls, "expected a help reply"
+    call = api.calls[0]
+    assert call["parse_mode"] == "HTML"
+    assert call["reply_markup"] == {"remove_keyboard": True}
+    assert "<b>Apollo</b>" in call["text"]
+    assert "topic" not in call["text"].lower()
+
+
+def test_today_offers_reply_keyboard_contextually(runtime) -> None:
+    runtime.settings.telegram.topic_routing = False
+    api = _CapturingAPI()
+    asyncio.run(
+        dispatch(runtime, api, Update(update_id=1, message=_message("/today")), TopicRouter())  # pyright: ignore[reportArgumentType]
+    )
+    assert api.calls, "expected an acknowledgement"
+    markup = api.calls[0]["reply_markup"]
+    assert markup["is_persistent"] is True
+    buttons = [b["text"] for row in markup["keyboard"] for b in row]
+    assert len(buttons) == 5
+    with runtime.db.session() as session:
+        jobs = list(session.execute(select(t.Job)).scalars())
+    assert any(job.kind == "skill.run" for job in jobs)

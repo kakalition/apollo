@@ -122,3 +122,58 @@ def test_notifications_use_topic_when_routing_enabled(runtime, clock) -> None:
         infra.set_setting(session, TOPICS_KEY, {"chat_id": 42, "threads": {"system": 999}})
     call = _deliver_one(runtime, clock, topic="system")
     assert call["message_thread_id"] == 999
+
+
+def test_markdown_notification_is_converted_and_safe(runtime, clock) -> None:
+    import asyncio
+
+    from apollo.db.repositories import infra
+    from apollo.telegram.outbox_drain import NotificationDrainer
+
+    markdown = "**Bold** & <tag>\n\n- item one\n- item two\n\nuse `code`"
+    with runtime.db.write() as session:
+        infra.enqueue_notification(
+            session,
+            kind="md",
+            ref_id="1",
+            payload={"text": markdown, "topic": "system", "format": "markdown"},
+            scheduled_for=clock.now(),
+        )
+    api = _CapturingAPI()
+    asyncio.run(
+        NotificationDrainer(api, runtime, chat_id=42).drain(  # pyright: ignore[reportArgumentType]
+            limit=5, clock=clock
+        )
+    )
+    call = api.calls[0]
+    assert call["parse_mode"] == "HTML"
+    assert "<b>Bold</b>" in call["text"]
+    assert "&amp;" in call["text"] and "&lt;tag&gt;" in call["text"]
+    assert "**" not in call["text"]
+    assert "<code>code</code>" in call["text"]
+    assert "• item one" in call["text"]
+
+
+def test_html_notification_is_not_re_escaped(runtime, clock) -> None:
+    import asyncio
+
+    from apollo.db.repositories import infra
+    from apollo.telegram.outbox_drain import NotificationDrainer
+
+    with runtime.db.write() as session:
+        infra.enqueue_notification(
+            session,
+            kind="approval",
+            ref_id="9",
+            payload={"text": "<b>Approval needed</b>\nDo X?", "topic": "system", "format": "html"},
+            scheduled_for=clock.now(),
+        )
+    api = _CapturingAPI()
+    asyncio.run(
+        NotificationDrainer(api, runtime, chat_id=42).drain(  # pyright: ignore[reportArgumentType]
+            limit=5, clock=clock
+        )
+    )
+    call = api.calls[0]
+    assert call["parse_mode"] == "HTML"
+    assert call["text"] == "<b>Approval needed</b>\nDo X?"

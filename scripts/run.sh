@@ -2,7 +2,9 @@
 # Apollo — one-command local stack.
 #
 # Brings up everything Apollo needs: Chroma (memory server), then the dispatcher,
-# worker and Telegram bot. Idempotent; safe to run again.
+# worker and Telegram bot. Idempotent and self-healing: it reaps stale processes so
+# you never end up with two bots fighting over getUpdates (409) or a double
+# dispatcher.
 #
 # Usage:
 #   scripts/run.sh              # start the whole stack (default)
@@ -17,8 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RUN_DIR="$ROOT/data/run"
-LOG_DIR="$ROOT/data/logs"
-mkdir -p "$RUN_DIR" "$LOG_DIR"
+mkdir -p "$RUN_DIR" "$ROOT/data/logs"
 
 PY="$ROOT/.venv/bin/python"
 CHROMA_BIN="$ROOT/.venv/bin/chroma"
@@ -31,17 +32,37 @@ info()  { printf '\033[1;36m[apollo]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m[apollo]\033[0m %s\n' "$*"; }
 fail()  { printf '\033[1;31m[apollo]\033[0m %s\n' "$*" >&2; }
 
+pattern_for() {
+  case "$1" in
+    chroma)     printf '%s run --path %s' "$CHROMA_BIN" "$CHROMA_PATH" ;;
+    telegram|worker|dispatcher) printf '%s -m apollo.cli %s' "$PY" "$1" ;;
+  esac
+}
+
 pid_of() { [[ -f "$RUN_DIR/$1.pid" ]] && cat "$RUN_DIR/$1.pid" 2>/dev/null || true; }
 is_running() { local pid; pid="$(pid_of "$1")"; [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; }
 
+# Any process matching a component's command line, regardless of pidfiles.
+stray_pids() { pgrep -f "$(pattern_for "$1")" 2>/dev/null || true; }
+
+reap_stale() {
+  local name="$1" pids; pids="$(stray_pids "$name")"
+  [[ -z "$pids" ]] && return 0
+  if is_running "$name"; then return 0; fi
+  warn "reaping stale $name process(es): $pids"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  sleep 1
+  pids="$(stray_pids "$name")"
+  # shellcheck disable=SC2086
+  [[ -n "$pids" ]] && { kill -9 $pids 2>/dev/null || true; sleep 1; }
+  return 0
+}
+
 # --- prerequisites ----------------------------------------------------------
 ensure_venv() {
-  if [[ ! -x "$PY" ]]; then
-    info "creating virtualenv and installing dependencies (uv sync --extra memory)"
-    uv sync --extra memory
-  fi
-  if [[ ! -x "$CHROMA_BIN" ]]; then
-    warn "chromadb extra missing; installing"
+  if [[ ! -x "$PY" || ! -x "$CHROMA_BIN" ]]; then
+    info "installing dependencies (uv sync --extra memory)"
     uv sync --extra memory
   fi
 }
@@ -70,10 +91,12 @@ ensure_db() {
 # --- process control --------------------------------------------------------
 start_one() {
   local name="$1"; shift
+  reap_stale "$name"
   if is_running "$name"; then
     info "$name already running (pid $(pid_of "$name"))"
     return 0
   fi
+  rm -f "$RUN_DIR/$name.pid"
   : > "$RUN_DIR/$name.log"
   "$@" >>"$RUN_DIR/$name.log" 2>&1 &
   echo $! > "$RUN_DIR/$name.pid"
@@ -100,18 +123,15 @@ start() {
   ensure_secrets
   ensure_db
 
-  if ! is_running chroma; then
-    start_one chroma "$CHROMA_BIN" run --path "$CHROMA_PATH" --port "$CHROMA_PORT"
-  fi
+  start_one chroma "$CHROMA_BIN" run --path "$CHROMA_PATH" --port "$CHROMA_PORT"
   if wait_for_http "$CHROMA_HEALTH" 45; then
     info "chroma healthy at $CHROMA_HEALTH"
   else
-    warn "chroma health check did not pass; other components will degrade to in-memory memory"
+    warn "chroma health check did not pass; memory will degrade to in-memory"
   fi
 
   start_one dispatcher "$PY" -m apollo.cli dispatcher
   start_one worker     "$PY" -m apollo.cli worker
-  # Telegram is optional: only start it if a token is configured.
   if grep -qE '^APOLLO_TELEGRAM__BOT_TOKEN=.+' "$ROOT/.env" 2>/dev/null; then
     start_one telegram "$PY" -m apollo.cli telegram
   else
@@ -130,11 +150,12 @@ stop_one() {
     info "stopping $name (pid $pid)"
     kill "$pid" 2>/dev/null || true
     for _ in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-    if kill -0 "$pid" 2>/dev/null; then
-      warn "$name did not exit; sending SIGKILL"
-      kill -9 "$pid" 2>/dev/null || true
-    fi
+    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
   fi
+  # Belt and braces: catch a process that lost its pidfile.
+  local pids; pids="$(stray_pids "$name")"
+  # shellcheck disable=SC2086
+  [[ -n "$pids" ]] && { info "reaping leftover $name (pids $pids)"; kill -9 $pids 2>/dev/null || true; }
   rm -f "$RUN_DIR/$name.pid"
 }
 

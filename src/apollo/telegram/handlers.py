@@ -17,6 +17,7 @@ from apollo.telegram.api import TelegramAPI, TelegramError
 from apollo.telegram.keyboards import (
     decode,
     inline_result_article,
+    remove_reply_keyboard,
     today_reply_keyboard,
 )
 from apollo.telegram.models import CallbackQuery, InlineQuery, Message, PollAnswer, Update
@@ -33,10 +34,14 @@ log = get_logger("apollo.telegram.handlers")
 
 HELP_TEXT = (
     "<b>Apollo</b>\n"
-    "Capture anything by typing in a topic. Commands:\n"
-    "/today — briefing · /capture &lt;text&gt; · /log &lt;text&gt;\n"
-    "/goals · /practices · /habits · /review · /focus · /memory · /skills\n"
-    "/approve · /pause · /resume · /settings · /help"
+    "Just talk to me — capture, log, ask. Or use a command:\n\n"
+    "<b>Daily</b>\n"
+    "/today — briefing · /focus — what to do now · /review — latest review\n"
+    "/capture &lt;text&gt; · /log &lt;text&gt; — explicit capture\n\n"
+    "<b>Look things up</b>\n"
+    "/goals · /practices · /habits · /memory · /skills\n\n"
+    "<b>Control</b>\n"
+    "/approve — pending approvals · /pause · /resume · /settings · /help"
 )
 
 QUICK_COMMANDS = {
@@ -194,7 +199,10 @@ async def _handle_command(
             )
             await _reply(api, message, "Captured from deep link.")
             return
-        await _reply(api, message, HELP_TEXT, reply_markup=today_reply_keyboard())
+        # No keyboard on start: clear any persistent one left over from earlier.
+        await _reply(
+            api, message, HELP_TEXT, parse_mode="HTML", reply_markup=remove_reply_keyboard()
+        )
         return
 
     if command in ("/capture", "/log"):
@@ -213,6 +221,9 @@ async def _handle_command(
             runtime, skill="daily-briefing", text="Produce today's briefing.",
             topic="today", message_thread_id=thread, telegram_user_id=user_id,
         )
+        # The one-tap check-in keyboard is offered contextually with the day's plan,
+        # not on every /start.
+        await _reply(api, message, "Putting your day together…", reply_markup=today_reply_keyboard())
         return
 
     if command == "/pause":
@@ -446,12 +457,14 @@ async def _show_settings(runtime: Runtime, api: TelegramAPI, message: Message) -
 
 
 async def _reply(api: TelegramAPI, message: Message, text: str, *, parse_mode: str | None = None, reply_markup: dict[str, Any] | None = None) -> None:
-    for part in chunk(text):
+    parts = chunk(text)
+    for index, part in enumerate(parts):
         try:
             await api.send_message(
                 message.chat.id, part,
                 message_thread_id=message.message_thread_id,
-                parse_mode=parse_mode, reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup if index == len(parts) - 1 else None,
             )
         except TelegramError as exc:
             log.warning("telegram.reply_failed", error=str(exc))

@@ -65,6 +65,7 @@ def default_reactions(event_type: str, payload: dict) -> list[JobSpec]:
                                 f"<i>kind: {payload.get('kind')}</i>"
                             ),
                             "topic": "system",
+                            "format": "html",
                             "actions": [{"approval_id": payload.get("id")}],
                         },
                         "urgent": True,
@@ -73,9 +74,37 @@ def default_reactions(event_type: str, payload: dict) -> list[JobSpec]:
                 )
             ]
         case EventType.HABIT_MISSED_STREAK | EventType.METRIC_BELOW_TARGET | EventType.TASK_OVERDUE:
-            return [JobSpec("notify.send", {"event": event_type, "payload": payload}, priority=4)]
+            text, topic = _alert_text(event_type, payload)
+            return [
+                JobSpec(
+                    "notify.send",
+                    {
+                        "kind": event_type,
+                        "ref_id": str(payload.get("id") or ""),
+                        "payload": {"text": text, "topic": topic, "format": "markdown"},
+                    },
+                    priority=4,
+                )
+            ]
         case _:
             return []
+
+
+def _alert_text(event_type: str, payload: dict) -> tuple[str, str]:
+    """Human, Markdown-rendered text for the built-in alert reactions."""
+    if event_type == EventType.HABIT_MISSED_STREAK:
+        name = payload.get("name") or "habit"
+        return f"**Habit streak broken:** {name}", "practices"
+    if event_type == EventType.METRIC_BELOW_TARGET:
+        name = payload.get("name") or "metric"
+        value = payload.get("value")
+        target = payload.get("target")
+        detail = f" — {value} vs target {target}" if value is not None and target is not None else ""
+        return f"**Metric below target:** {name}{detail}", "metrics"
+    title = payload.get("title") or "task"
+    due = payload.get("due_at")
+    detail = f" (was due {due})" if due else ""
+    return f"**Overdue:** {title}{detail}", "today"
 
 
 def drain_events(

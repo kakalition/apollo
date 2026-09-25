@@ -326,7 +326,7 @@ def _notify_result(
             kind="agent.result",
             ref_id=payload.get("run_id") or result.agent,
             period=None,
-            payload={"text": text[:4000], "topic": topic},
+            payload={"text": text[:4000], "topic": topic, "format": "markdown"},
             urgent=bool(result.error),
         )
 

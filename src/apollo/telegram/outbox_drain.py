@@ -15,6 +15,7 @@ from apollo.db.repositories import infra
 from apollo.observability import get_logger
 from apollo.telegram.api import TelegramAPI, TelegramError
 from apollo.telegram.keyboards import approval_keyboard, inline_keyboard
+from apollo.telegram.markdown import to_telegram_html
 from apollo.telegram.render import chunk
 from apollo.telegram.topics import TopicRouter
 from apollo.tools.clock import Clock
@@ -55,6 +56,7 @@ class NotificationDrainer:
             return False
 
         text = str(payload.get("text") or "")
+        fmt = str(payload.get("format") or "markdown")
         markup = None
         if payload.get("actions"):
             markup = approval_keyboard(int(payload["actions"][0].get("approval_id", 0)))
@@ -76,14 +78,18 @@ class NotificationDrainer:
             with self.runtime.db.session() as session:
                 thread_id = TopicRouter.load(session).thread_for(str(topic_slug))
 
+        # Markdown from agents is converted to safe HTML; hand-built HTML passes
+        # through; anything else is sent as plain text.
+        parts = chunk(text)
         try:
-            for part in chunk(text):
+            for index, part in enumerate(parts):
+                outgoing = to_telegram_html(part) if fmt == "markdown" else part
                 await self.api.send_message(
                     self.chat_id,
-                    part,
+                    outgoing,
                     message_thread_id=thread_id,
-                    parse_mode="HTML",
-                    reply_markup=markup if part == chunk(text)[-1] else None,
+                    parse_mode="HTML" if fmt in ("markdown", "html") else None,
+                    reply_markup=markup if index == len(parts) - 1 else None,
                 )
         except TelegramError as exc:
             if exc.is_rate_limited:
