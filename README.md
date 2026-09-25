@@ -134,7 +134,7 @@ apply (capture/plan)  or  tools (coach/researcher)   ← writes happen here, wit
 | Specialist | Tools | Skills | Output |
 |---|---|---|---|
 | supervisor | none | – | `RouteDecision` |
-| triage | **none** (ids injected into instructions) | – | `CaptureResult` (task/checkin/metric/note) |
+| triage | **none** (ids + current time injected) | – | `CaptureResult` (task / checkin / metric / note / reminder) |
 | planner | **none** (existing goal/task ids injected) | – | `PlanResult` (nested goal→practice→projects→tasks) |
 | coach | read, write, memory.recall, notify | summaries + on-demand `load_skill` | `CoachResult` |
 | researcher | read, memory.recall, notify, approval + MCP toolsets | summaries + `load_skill` | `ResearchResult` |
@@ -326,8 +326,15 @@ Built-in routines: morning briefing 07:00 · evening check-in 21:00 · weekly re
 Sun 18:00 · drift check daily · overdue sweep hourly · vault sync every 5 minutes.
 Add your own with cron, event, or safe registered condition predicates
 (`no_checkin_days`, `metric_below_target`, `habit_streak_broken`,
-`goal_no_progress_days`, `overdue_tasks`). Quiet hours buffer non-urgent
-notifications until the window ends.
+`goal_no_progress_days`, `overdue_tasks`).
+
+**One-off reminders** are supported: “remind me to drink water in 30 minutes”
+creates a `reminder.fire` job scheduled at that time, which sends an urgent
+notification when it fires.
+
+**Quiet hours** buffer *proactive* notifications until the window ends, but never a
+reply: an answer to a message you just sent is transactional and goes out
+immediately, even at 2am.
 
 ## Privacy & security
 
