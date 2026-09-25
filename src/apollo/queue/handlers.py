@@ -169,6 +169,21 @@ def handle_overdue_sweep(ctx: JobContext) -> dict[str, Any]:
     return {"overdue": len(ids)}
 
 
+def handle_reminder_fire(ctx: JobContext) -> dict[str, Any]:
+    """Fire a one-off reminder queued by a SetReminder command."""
+    text = str(ctx.payload.get("text") or "Reminder")
+    with ctx.write() as session:
+        notification = infra.enqueue_notification(
+            session,
+            kind="reminder",
+            ref_id=f"reminder:{ctx.job_id}",
+            payload={"text": f"⏰ {text}", "topic": "today", "format": "markdown"},
+            urgent=True,
+        )
+        notification_id = notification.id
+    return {"notification_id": notification_id}
+
+
 HANDLERS = {
     "vault.sync": handle_vault_sync,
     "agent.run": handle_agent_run,
@@ -181,4 +196,5 @@ HANDLERS = {
     "notify.send": handle_notify_send,
     "schedule.evaluate": handle_schedule_evaluate,
     "overdue.sweep": handle_overdue_sweep,
+    "reminder.fire": handle_reminder_fire,
 }

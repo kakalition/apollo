@@ -33,6 +33,9 @@ Output shape: `items` is a list, each item one of
 - `checkin` — a logged habit/task/reflection: {{kind: "checkin", checkin_kind, ref_id?, value_num?, note?}}
 - `metric`  — a measured value: {{kind: "metric", value, metric_id?, name?, unit?}}
 - `note`    — free text to file: {{kind: "note", body, title?}}
+- `reminder` — fire a one-off notification at a time: {{kind: "reminder", at, text}}
+  `at` MUST be an absolute ISO-8601 timestamp; convert relative phrases like
+  "in 1 minute" using the current time given to you.
 
 Rules: one item per distinct thing; keep the user's words in `title`; only set
 `due_at` when a date/time is explicit (ISO-8601); use checkin_kind "reflection" for

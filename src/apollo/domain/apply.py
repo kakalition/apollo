@@ -31,6 +31,7 @@ from apollo.domain.commands import (
     CreateProject,
     LogCheckIn,
     LogMetric,
+    SetReminder,
     UpdateGoal,
     UpdateProject,
 )
@@ -55,6 +56,7 @@ def capture_result_to_commands(result: Any) -> list[Command]:
         CaptureTasks,
         LogCheckIn,
         LogMetric,
+        SetReminder,
     )
 
     tasks: list[CaptureTask] = []
@@ -89,6 +91,10 @@ def capture_result_to_commands(result: Any) -> list[Command]:
             )
         elif kind == "note":
             commands.append(CaptureNote(body=item.body, title=item.title))
+        elif kind == "reminder":
+            at = parse_datetime(item.at)
+            if at is not None:
+                commands.append(SetReminder(at=at, text=item.text))
     if tasks:
         commands.insert(0, CaptureTasks(tasks=tasks))
     return commands
@@ -413,6 +419,18 @@ def apply_command(
                 occurred_at=parse_datetime(command.occurred_at),
             )
             return f"note {result.get('path')}"
+
+        case SetReminder():
+            from apollo.queue.jobs import enqueue_job
+
+            job = enqueue_job(
+                session,
+                kind="reminder.fire",
+                payload={"text": command.text, "run_id": run_id},
+                run_after=command.at,
+                priority=2,
+            )
+            return f"reminder #{job.id} at {command.at.isoformat()}"
 
         case AskQuestion():
             return f"question: {command.question}"

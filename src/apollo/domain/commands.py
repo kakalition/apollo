@@ -141,6 +141,14 @@ class AskQuestion(_Command):
     context: str | None = None
 
 
+class SetReminder(_Command):
+    """Fire a one-off notification at an absolute time."""
+
+    kind: Literal["set_reminder"] = "set_reminder"
+    at: datetime
+    text: str
+
+
 Command = Annotated[
     CaptureTask
     | CaptureTasks
@@ -155,7 +163,8 @@ Command = Annotated[
     | UpdateProject
     | CaptureNote
     | CompleteReview
-    | AskQuestion,
+    | AskQuestion
+    | SetReminder,
     Field(discriminator="kind"),
 ]
 
@@ -207,8 +216,17 @@ class CaptureNoteItem(BaseModel):
     title: str | None = None
 
 
+class CaptureReminderItem(BaseModel):
+    """A one-off reminder: `at` must be an absolute ISO-8601 timestamp."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["reminder"] = "reminder"
+    at: str
+    text: str
+
+
 CaptureItem = Annotated[
-    CaptureTaskItem | CaptureCheckinItem | CaptureMetricItem | CaptureNoteItem,
+    CaptureTaskItem | CaptureCheckinItem | CaptureMetricItem | CaptureNoteItem | CaptureReminderItem,
     Field(discriminator="kind"),
 ]
 

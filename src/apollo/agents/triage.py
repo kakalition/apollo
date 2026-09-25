@@ -28,7 +28,7 @@ def _reference_block(ctx: RunContext[Context]) -> str:
         habits = repo.list_habits(session)[:20]
         metrics = repo.list_metrics(session)[:20]
         last = logrepo.last_checkin_in(session, CheckInKind.REFLECTION)
-    lines: list[str] = []
+    lines: list[str] = [f"current time: {ctx.deps.clock.now().isoformat()}"]
     if habits:
         lines.append("habits: " + ", ".join(f"#{h.id} {h.name}" for h in habits))
     if metrics:

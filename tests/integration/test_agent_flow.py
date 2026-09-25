@@ -101,3 +101,26 @@ def test_capture_phrasing_skips_supervisor() -> None:
     assert looks_like_capture("log 7 hours of sleep")
     assert not looks_like_capture("what should I focus on today?")
     assert not looks_like_capture("I want to get fit and run a half marathon")
+
+
+def test_user_reply_notification_is_not_quiet_hours_buffered(runtime) -> None:
+    """A reply to an inbound message is urgent; scheduled output is not."""
+    from sqlalchemy import select
+
+    from apollo.agents.runtime import AgentRunResult, _notify_result
+
+    result = AgentRunResult(
+        agent="triage", tier="triage", model="m", output_text="Done.", output=None
+    )
+    with runtime.db.write() as session:
+        pass
+    _notify_result(runtime, "triage", result, {"run_id": "r-reply", "telegram_user_id": 42}, [])
+    _notify_result(runtime, "coach", result, {"run_id": "r-scheduled"}, [])
+
+    with runtime.db.session() as session:
+        rows = {
+            n.ref_id: n.urgent
+            for n in session.execute(select(t.Notification)).scalars()
+        }
+    assert rows["r-reply"] is True
+    assert rows["r-scheduled"] is False

@@ -187,3 +187,26 @@ def test_apply_plan_wires_parents_and_children(db) -> None:
         assert repo.list_projects(session, goal_id=goal.id)[0].title == "Register"
         titles = {task.title for task in repo.list_tasks(session)}
     assert {"Pick a race", "Buy shoes", "Loose task"} <= titles
+
+
+def test_capture_reminder_schedules_a_one_off_job(db) -> None:
+    from sqlalchemy import select
+
+    from apollo.db import tables as t
+    from apollo.domain.apply import apply_capture
+    from apollo.domain.commands import CaptureResult
+
+    result = CaptureResult.model_validate(
+        {
+            "items": [
+                {"kind": "reminder", "at": "2026-03-02T10:00:00+00:00", "text": "drink water"}
+            ]
+        }
+    )
+    with db.write() as session:
+        out = apply_capture(session, result)
+    assert out and out[0].startswith("reminder #")
+    with db.session() as session:
+        job = session.execute(select(t.Job)).scalars().first()
+    assert job is not None and job.kind == "reminder.fire"
+    assert job.payload_json["text"] == "drink water"

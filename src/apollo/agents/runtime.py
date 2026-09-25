@@ -459,7 +459,9 @@ def _notify_result(
             ref_id=payload.get("run_id") or result.agent,
             period=None,
             payload={"text": text[:4000], "topic": topic, "format": "markdown"},
-            urgent=bool(result.error),
+            # A reply to a message the user just sent is transactional: it must not
+            # be held back by quiet hours. Only proactive/scheduled output is buffered.
+            urgent=bool(result.error) or bool(payload.get("telegram_user_id")),
         )
 
 

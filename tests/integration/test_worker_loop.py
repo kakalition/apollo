@@ -177,3 +177,16 @@ def test_html_notification_is_not_re_escaped(runtime, clock) -> None:
     call = api.calls[0]
     assert call["parse_mode"] == "HTML"
     assert call["text"] == "<b>Approval needed</b>\nDo X?"
+
+
+def test_reminder_fire_enqueues_urgent_notification(runtime) -> None:
+    from apollo.queue.handlers import handle_reminder_fire
+    from apollo.queue.worker import JobContext
+
+    ctx = JobContext(runtime=runtime, job_id=7, kind="reminder.fire", payload={"text": "drink water"})
+    out = handle_reminder_fire(ctx)
+    with runtime.db.session() as session:
+        notification = session.get(t.Notification, out["notification_id"])
+    assert notification is not None
+    assert notification.urgent is True
+    assert "drink water" in notification.payload_json["text"]
