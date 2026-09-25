@@ -349,7 +349,7 @@ class TelegramAPI:
                 chat_id=chat_id,
                 message_id=message_id,
                 reaction=reaction,
-                is_big=is_big,
+                is_big=is_big or None,
             )
         )
 

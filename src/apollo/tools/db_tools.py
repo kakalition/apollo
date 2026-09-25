@@ -87,9 +87,18 @@ def _kind(payload: dict[str, Any]) -> str:
     return "task"
 
 
+def _coerce(enum_cls: Any, value: Any, default: Any = None) -> Any:
+    """Model-supplied filters ("open", "in progress") must never raise."""
+    if not value:
+        return default
+    try:
+        return enum_cls(value)
+    except ValueError:
+        return default
+
+
 def list_goals(session: Session, status: str | None = None) -> list[dict[str, Any]]:
-    goal_status = m.GoalStatus(status) if status else None
-    return [_dump(g) for g in repo.list_goals(session, status=goal_status)]
+    return [_dump(g) for g in repo.list_goals(session, status=_coerce(m.GoalStatus, status))]
 
 
 def get_goal(session: Session, goal_id: int) -> dict[str, Any] | None:
@@ -114,7 +123,7 @@ def list_tasks(
     project_id: int | None = None,
     goal_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    task_status = m.TaskStatus(status) if status else None
+    task_status = _coerce(m.TaskStatus, status)
     return [
         _dump(t)
         for t in repo.list_tasks(
@@ -190,7 +199,7 @@ def complete_task(session: Session, task_id: int) -> dict[str, Any]:
 
 def log_checkin(session: Session, *, kind: str | None = None, **fields: Any) -> dict[str, Any]:
     checkin = m.CheckIn(
-        kind=m.CheckInKind(kind or fields.pop("checkin_kind", "reflection")),
+        kind=_coerce(m.CheckInKind, kind or fields.pop("checkin_kind", "reflection"), m.CheckInKind.REFLECTION),
         occurred_at=fields.pop("occurred_at", None) or _now(),
         **fields,
     )

@@ -73,3 +73,33 @@ def test_context_exposes_skills_and_clock(runtime) -> None:
     skills = {s.name for s in context.skills.all()}
     assert "capture" in skills
     assert context.clock.now() is not None
+
+
+class _FakeSink:
+    def __init__(self) -> None:
+        self.pushes: list[str] = []
+        self.finished = False
+        self.cancelled = False
+
+    async def push(self, text: str) -> None:
+        self.pushes.append(text)
+
+    async def finish(self, text: str) -> None:
+        self.finished = True
+
+    async def cancel(self) -> None:
+        self.cancelled = True
+
+
+def test_structured_agents_stream_with_a_keepalive_not_stream_text(runtime) -> None:
+    """Regression: stream_text() only works for str output; structured agents must
+    fall back to a keepalive draft instead of failing the whole run."""
+    from apollo.agents.runtime import build_context, run_agent
+
+    sink = _FakeSink()
+    context = build_context(runtime, extra={"model_overrides": {"triage": _triage_model()}})
+    result = asyncio.run(run_agent(context, "triage", "buy milk", stream=sink))
+
+    assert result.error is None
+    assert sink.finished is True and sink.cancelled is False
+    assert sink.pushes, "expected a keepalive draft update"

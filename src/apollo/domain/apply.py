@@ -37,6 +37,16 @@ from apollo.domain.commands import (
 from apollo.tools.time import parse_datetime
 
 
+def _enum(value: Any, enum_cls: Any, default: Any) -> Any:
+    """Coerce a model-provided string to an enum, falling back to a safe default."""
+    if value is None:
+        return default
+    try:
+        return enum_cls(value)
+    except ValueError:
+        return default
+
+
 def apply_batch(
     session: Session,
     commands: list[Command],
@@ -90,7 +100,7 @@ def apply_command(
             checkin = logrepo.log_checkin(
                 session,
                 m.CheckIn(
-                    kind=command.checkin_kind,
+                    kind=_enum(command.checkin_kind, m.CheckInKind, m.CheckInKind.REFLECTION),
                     ref_id=command.ref_id,
                     value_num=command.value_num,
                     value_text=command.value_text,
@@ -144,7 +154,7 @@ def apply_command(
                     goal_id=command.goal_id,
                     description=command.description,
                     cadence=command.cadence,
-                    review_cadence=command.review_cadence,
+                    review_cadence=_enum(command.review_cadence, m.ReviewCadence, None),
                 ),
             )
             return f"practice #{practice.id} {practice.name}"
@@ -193,7 +203,10 @@ def apply_command(
 
         case UpdateProject():
             project = repo.update_project(
-                session, command.project_id, status=command.status, done_when=command.done_when
+                session,
+                command.project_id,
+                status=_enum(command.status, m.ProjectStatus, None),
+                done_when=command.done_when,
             )
             return f"updated project #{project.id}"
 
@@ -249,7 +262,7 @@ def _find_or_create_metric(session: Session, command: Any) -> int:
                 name=command.name,
                 unit=command.unit,
                 target=command.target,
-                direction=command.direction,
+                direction=_enum(command.direction, m.Direction, m.Direction.INCREASE),
             ),
         )
         return int(metric.id or 0)

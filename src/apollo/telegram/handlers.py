@@ -20,6 +20,7 @@ from apollo.telegram.keyboards import (
     remove_reply_keyboard,
 )
 from apollo.telegram.models import CallbackQuery, InlineQuery, Message, PollAnswer, Update
+from apollo.telegram.reactions import is_valid_reaction, reaction_payload
 from apollo.telegram.render import RichDocument, chunk, escape
 from apollo.telegram.streaming import request_cancel
 from apollo.telegram.topics import TopicRouter
@@ -178,7 +179,7 @@ async def handle_message(
         telegram_user_id=user_id,
         agent=_forced_agent(runtime, topic),
     )
-    await _ack(api, message)
+    await _ack(runtime, api, message)
 
 
 async def _handle_command(
@@ -473,10 +474,18 @@ async def _reply(api: TelegramAPI, message: Message, text: str, *, parse_mode: s
             break
 
 
-async def _ack(api: TelegramAPI, message: Message) -> None:
+async def _ack(runtime: Runtime, api: TelegramAPI, message: Message) -> None:
     """Acknowledge a capture with a reaction (no extra message)."""
+    emoji = runtime.settings.telegram.ack_reaction
+    if not emoji:
+        return
+    if not is_valid_reaction(emoji):
+        log.warning("telegram.invalid_ack_reaction", emoji=emoji)
+        return
     try:
-        await api.set_message_reaction(message.chat.id, message.message_id, [{"type": "emoji", "emoji": "✅"}])
+        await api.set_message_reaction(
+            message.chat.id, message.message_id, reaction_payload(emoji)
+        )
     except Exception as exc:
         log.debug("telegram.reaction_failed", error=str(exc))
 

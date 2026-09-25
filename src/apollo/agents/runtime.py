@@ -7,6 +7,8 @@ attachment and MCP toolsets stay in one place.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -47,6 +49,8 @@ class StreamSink(Protocol):
     async def push(self, text: str) -> None: ...
 
     async def finish(self, text: str) -> None: ...
+
+    async def cancel(self) -> None: ...
 
 
 @dataclass(slots=True)
@@ -142,21 +146,36 @@ async def run_agent(
     agent = build_agent(context, name)
     tier = _tier_for(name, context, tier_override)
     model_name = model_name_for(context.settings, tier)  # type: ignore[arg-type]
+    timeout = float(getattr(context.settings.provider, "run_timeout_seconds", 120) or 0) or None
     started = time.perf_counter()
     try:
         if stream is not None:
-            output, usage, tool_calls = await _run_streaming(
-                agent, context, prompt, conversation_id, stream
+            output, usage, tool_calls = await asyncio.wait_for(
+                _run_streaming(agent, context, prompt, conversation_id, stream), timeout
             )
         else:
-            result = await agent.run(prompt, deps=context, conversation_id=conversation_id)
+            result = await asyncio.wait_for(
+                agent.run(prompt, deps=context, conversation_id=conversation_id), timeout
+            )
             output = result.output
             usage = _usage_of(result)
             tool_calls = _tool_call_names(result)
     except Exception as exc:
         duration = int((time.perf_counter() - started) * 1000)
         cancelled = exc.__class__.__name__ == "RunCancelled"
-        log.warning("agent.run_cancelled" if cancelled else "agent.run_failed", agent=name, error=str(exc))
+        timed_out = isinstance(exc, TimeoutError)
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                await stream.cancel()
+        if timed_out:
+            message = f"run timed out after {int(timeout or 0)}s"
+        else:
+            message = f"{type(exc).__name__}: {exc}"
+        log.warning(
+            "agent.run_cancelled" if cancelled else "agent.run_failed",
+            agent=name,
+            error=message,
+        )
         return AgentRunResult(
             agent=name,
             tier=tier,
@@ -164,7 +183,7 @@ async def run_agent(
             output=None,
             output_text="",
             duration_ms=duration,
-            error=None if cancelled else f"{type(exc).__name__}: {exc}",
+            error=None if cancelled else message,
             cancelled=cancelled,
         )
     duration = int((time.perf_counter() - started) * 1000)
@@ -188,14 +207,69 @@ async def _run_streaming(
     conversation_id: str | None,
     stream: StreamSink,
 ) -> tuple[Any, Any, list[str]]:
-    async with agent.run_stream(prompt, deps=context, conversation_id=conversation_id) as result:
-        async for delta in result.stream_text(delta=True):
-            if delta:
-                await stream.push(delta)
-        output = await result.get_output()
-        usage = _usage_of(result)
-        await stream.finish(_text_of(output))
-        return output, usage, _tool_call_names(result)
+    # ``stream_text`` only works for plain-text agents; our specialists return
+    # structured output, so they get a keepalive "Thinking…" draft instead.
+    if agent.output_type is not str:
+        return await _run_structured_streaming(agent, context, prompt, conversation_id, stream)
+    try:
+        async with agent.run_stream(prompt, deps=context, conversation_id=conversation_id) as result:
+            async for delta in result.stream_text(delta=True):
+                if delta:
+                    await stream.push(delta)
+            output = await result.get_output()
+            usage = _usage_of(result)
+            await stream.finish(_text_of(output))
+            return output, usage, _tool_call_names(result)
+    except Exception:
+        await stream.cancel()
+        raise
+
+
+async def _run_structured_streaming(
+    agent: Agent[Context, Any],
+    context: Context,
+    prompt: str,
+    conversation_id: str | None,
+    stream: StreamSink,
+) -> tuple[Any, Any, list[str]]:
+    run_task = asyncio.create_task(
+        agent.run(prompt, deps=context, conversation_id=conversation_id)
+    )
+    keepalive = asyncio.create_task(_keepalive(stream, run_task))
+    try:
+        result = await run_task
+    except asyncio.CancelledError:
+        from apollo.telegram.streaming import RunCancelled
+
+        await stream.cancel()
+        raise RunCancelled() from None
+    except Exception:
+        await stream.cancel()
+        raise
+    finally:
+        keepalive.cancel()
+        await asyncio.gather(keepalive, return_exceptions=True)
+    output = result.output
+    usage = _usage_of(result)
+    await stream.finish(_text_of(output))
+    return output, usage, _tool_call_names(result)
+
+
+async def _keepalive(stream: StreamSink, task: asyncio.Task[Any], interval: float = 15.0) -> None:
+    """Hold the draft open (and honour Stop) while a structured run is in flight."""
+    from apollo.telegram.streaming import RunCancelled
+
+    try:
+        await stream.push("")
+        while not task.done():
+            await asyncio.sleep(interval)
+            if task.done():
+                break
+            await stream.push("")
+    except RunCancelled:
+        task.cancel()
+    except Exception:
+        return
 
 
 def _usage_of(result: Any) -> Any:

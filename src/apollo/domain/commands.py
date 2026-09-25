@@ -11,13 +11,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from apollo.domain.models import (
-    CheckInKind,
-    Direction,
-    ProjectStatus,
-    ReviewCadence,
-    TaskStatus,
-)
+# LLM-controlled fields use ``str`` rather than strict enums: models sometimes emit
+# near-miss values ("open" for a task status), and a validation error would fail the
+# whole run. ``apollo.domain.apply`` coerces to the real enum with a safe default.
 
 
 class _Command(BaseModel):
@@ -42,7 +38,7 @@ class CaptureTasks(_Command):
 
 class LogCheckIn(_Command):
     kind: Literal["log_checkin"] = "log_checkin"
-    checkin_kind: CheckInKind
+    checkin_kind: str  # habit | metric | task | reflection
     ref_id: int | None = None
     value_num: float | None = None
     value_text: str | None = None
@@ -69,7 +65,7 @@ class CreatePractice(_Command):
     goal_id: int | None = None
     description: str | None = None
     cadence: str | None = None
-    review_cadence: ReviewCadence | None = None
+    review_cadence: str | None = None
 
 
 class CreateProject(_Command):
@@ -95,7 +91,7 @@ class LogMetric(_Command):
     name: str | None = None
     unit: str | None = None
     target: float | None = None
-    direction: Direction = Direction.INCREASE
+    direction: str = "increase"  # increase | decrease | maintain
     value: float
     occurred_at: datetime | None = None
 
@@ -112,13 +108,13 @@ class UpdateGoal(_Command):
 class CompleteTask(_Command):
     kind: Literal["complete_task"] = "complete_task"
     task_id: int
-    status: TaskStatus = TaskStatus.DONE
+    status: str = "done"
 
 
 class UpdateProject(_Command):
     kind: Literal["update_project"] = "update_project"
     project_id: int
-    status: ProjectStatus | None = None
+    status: str | None = None  # planned | active | blocked | done | dropped
     done_when: str | None = None
 
 
@@ -133,7 +129,7 @@ class CaptureNote(_Command):
 class CompleteReview(_Command):
     kind: Literal["complete_review"] = "complete_review"
     review_id: int | None = None
-    cadence: ReviewCadence | None = None
+    cadence: str | None = None  # daily | weekly | monthly
     summary: str | None = None
     insights: str | None = None
     adjustments: dict[str, Any] = Field(default_factory=dict)

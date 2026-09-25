@@ -39,6 +39,9 @@ class AppSettings(BaseModel):
 class ProviderSettings(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
+    # Hard ceiling on a single agent run; a stuck model call fails fast instead of
+    # occupying the worker forever.
+    run_timeout_seconds: int = 120
     # When set, this single model id is used for every tier (simple proxies).
     chat_model_id: str | None = None
     # Embeddings model id served by the same endpoint, if any.
@@ -70,6 +73,9 @@ class TelegramSettings(BaseModel):
     bot_token: str | None = None
     allowed_user_ids: list[int] = Field(default_factory=list)
     topic_routing: bool = True
+    # Emoji the bot reacts with to acknowledge a capture. Must be a valid Telegram
+    # reaction emoji; set to "" to disable the acknowledgement.
+    ack_reaction: str = "👍"
     quiet_hours: dict[str, str] = Field(default_factory=lambda: {"start": "22:00", "end": "07:00"})
     rate_limit_per_second: float = 1.0
     poll_timeout: int = 30

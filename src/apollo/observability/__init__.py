@@ -39,6 +39,10 @@ def setup_logging(
         handlers=handlers,
         format="%(message)s",
     )
+    # Third-party HTTP clients log every request/response at INFO; keep our logs
+    # readable by only surfacing their warnings and errors.
+    for noisy in ("httpx", "httpcore", "openai", "chromadb"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     shared: list[Any] = [
         structlog.contextvars.merge_contextvars,

@@ -132,7 +132,8 @@ class _CapturingAPI:
         self.calls.append({"chat_id": chat_id, "text": text, **kwargs})
         return None
 
-    async def set_message_reaction(self, *args, **kwargs):
+    async def set_message_reaction(self, chat_id, message_id, reaction, **kwargs):
+        self.calls.append({"reaction": reaction, "chat_id": chat_id, "message_id": message_id})
         return True
 
 
@@ -182,3 +183,25 @@ def test_settings_clears_any_persistent_keyboard(runtime) -> None:
     )
     assert api.calls, "expected a settings reply"
     assert api.calls[-1]["reply_markup"] == {"remove_keyboard": True}
+
+
+def test_capture_ack_uses_a_valid_reaction_emoji(runtime) -> None:
+    runtime.settings.telegram.topic_routing = False
+    api = _CapturingAPI()
+    asyncio.run(
+        dispatch(runtime, api, Update(update_id=1, message=_message("buy milk")), TopicRouter())  # pyright: ignore[reportArgumentType]
+    )
+    reactions = [c for c in api.calls if "reaction" in c]
+    assert reactions == [
+        {"reaction": [{"type": "emoji", "emoji": "👍"}], "chat_id": 42, "message_id": 1}
+    ]
+
+
+def test_invalid_configured_ack_emoji_is_skipped(runtime) -> None:
+    runtime.settings.telegram.topic_routing = False
+    runtime.settings.telegram.ack_reaction = "✅"  # not a permitted reaction
+    api = _CapturingAPI()
+    asyncio.run(
+        dispatch(runtime, api, Update(update_id=1, message=_message("buy milk")), TopicRouter())  # pyright: ignore[reportArgumentType]
+    )
+    assert not [c for c in api.calls if "reaction" in c]
