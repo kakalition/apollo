@@ -26,5 +26,6 @@ def build_planner(settings: Settings, model: Any | None = None) -> Agent[Context
         name="planner",
         instructions=_instructions,
     )
-    toolset.attach(agent, {"db.read", "db.write", "skills.load", "approval.request"})
+    # Planner proposes via commands; applies happen centrally after a valid output.
+    toolset.attach(agent, {"db.read", "skills.load", "approval.request"})
     return agent

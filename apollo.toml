@@ -15,9 +15,10 @@ otel_enabled = false
 # Provider — OpenAI-compatible chat completions endpoint.
 # base_url/api_key come from .env (APOLLO_PROVIDER__BASE_URL / __API_KEY).
 # Model ids below are mirrored from the `commandcode` provider in kilo.json.
+# Env overrides: CHAT_MODEL_ID (all tiers), LIGHT_MODEL_ID (supervisor/triage/memory).
 # ---------------------------------------------------------------------------
 [provider]
-tiers = { triage = "deepseek/deepseek-v4-flash-fast", plan = "claude-opus-5", coach = "claude-opus-5", research = "gpt-5.6-sol", memory = "deepseek/deepseek-v4-flash" }
+tiers = { light = "deepseek/deepseek-v4-flash-fast", triage = "deepseek/deepseek-v4-flash-fast", plan = "claude-opus-5", coach = "claude-opus-5", research = "gpt-5.6-sol", memory = "deepseek/deepseek-v4-flash" }
 
 [embeddings]
 # Primary embeddings model id on the main provider. Probe with `apollo doctor`.

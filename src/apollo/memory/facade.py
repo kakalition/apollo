@@ -83,3 +83,33 @@ def build_memory(runtime: Any) -> Memory:
             detail="falling back to in-memory memory (not durable)",
         )
         return InMemoryMemory()
+
+
+class LazyMemory:
+    """Defers constructing the real backend until memory is actually used.
+
+    Building Mem0/Chroma costs seconds; most runs (routing, capture, planning)
+    never touch memory, so they should not pay for it.
+    """
+
+    def __init__(self, runtime: Any) -> None:
+        self._runtime = runtime
+        self._backend: Memory | None = None
+
+    @property
+    def backend(self) -> Memory:
+        if self._backend is None:
+            self._backend = build_memory(self._runtime)
+        return self._backend
+
+    def remember(self, text: str, *, metadata: dict[str, Any] | None = None) -> str | None:
+        return self.backend.remember(text, metadata=metadata)
+
+    def recall(self, query: str, *, k: int = 6) -> list[MemoryItem]:
+        return self.backend.recall(query, k=k)
+
+    def forget(self, memory_id: str) -> None:
+        self.backend.forget(memory_id)
+
+    def reindex(self, session: Session) -> int:
+        return self.backend.reindex(session)

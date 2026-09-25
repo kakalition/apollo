@@ -28,7 +28,7 @@ log = get_logger("apollo.worker")
 
 Handler = Callable[["JobContext"], dict[str, Any] | None]
 
-POLL_INTERVAL_SECONDS = 1.0
+POLL_INTERVAL_SECONDS = 0.35
 LEASE_SECONDS = 300
 
 

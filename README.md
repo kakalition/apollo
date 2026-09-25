@@ -179,14 +179,21 @@ chroma_url = "http://localhost:8000"
 APOLLO_PROVIDER__BASE_URL=https://openrouter.ai/api/v1
 APOLLO_PROVIDER__API_KEY=…
 APOLLO_PROVIDER__CHAT_MODEL_ID=deepseek/deepseek-v4-flash-0731
+APOLLO_PROVIDER__LIGHT_MODEL_ID=openai/gpt-oss-20b
 APOLLO_PROVIDER__EMBEDDING_MODEL_ID=openai/text-embedding-3-small
 APOLLO_TELEGRAM__BOT_TOKEN=…
 APOLLO_TELEGRAM__ALLOWED_USER_IDS=[123456789]
 ```
 
 Any OpenAI-compatible endpoint works. `CHAT_MODEL_ID` overrides all tiers;
-`EMBEDDING_MODEL_ID` overrides `[embeddings].model`. If a provider serves no
-embeddings, Apollo falls back to a second provider or local `fastembed`.
+`LIGHT_MODEL_ID` handles the simple schemas only (supervisor routing, memory
+extraction) — capture and planning stay on the chat model because the large command
+union is unreliable on tiny models. `EMBEDDING_MODEL_ID` overrides
+`[embeddings].model`. If a provider serves no embeddings, Apollo falls back to a
+second provider or local `fastembed`.
+
+A typical capture (message → final Telegram reply) lands in **~6–10 s** end to end;
+measure it with `uv run python scripts/bench_capture.py --count 3`.
 
 ## Telegram setup
 

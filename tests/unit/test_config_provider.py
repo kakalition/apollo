@@ -78,3 +78,28 @@ def test_should_normalize_only_non_streaming_chat() -> None:
     assert _should_normalize(chat) is True
     assert _should_normalize(stream) is False
     assert _should_normalize(other) is False
+
+
+def test_light_model_routes_only_light_tiers() -> None:
+    provider = ProviderSettings(
+        chat_model_id="deepseek/deepseek-v4-flash-0731",
+        light_model_id="openai/gpt-oss-20b",
+    )
+    assert provider.model_for("light") == "openai/gpt-oss-20b"
+    assert provider.model_for("memory") == "openai/gpt-oss-20b"
+    for heavy in ("triage", "plan", "coach", "research"):
+        assert provider.model_for(heavy) == "deepseek/deepseek-v4-flash-0731"
+
+
+def test_light_model_is_optional() -> None:
+    provider = ProviderSettings(chat_model_id="chat")
+    assert provider.model_for("light") == "chat"
+    assert provider.model_for("triage") == "chat"
+
+
+def test_light_model_falls_back_to_tiers() -> None:
+    provider = ProviderSettings(tiers={"triage": "cheap", "plan": "strong"})
+    assert provider.model_for("triage") == "cheap"
+    provider2 = ProviderSettings(tiers={"plan": "strong"}, light_model_id="light")
+    assert provider2.model_for("light") == "light"
+    assert provider2.model_for("plan") == "strong"

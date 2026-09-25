@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 log = get_logger("apollo.agents.runtime")
 
 AGENT_TIERS = {
-    "supervisor": "triage",
+    "supervisor": "light",
     "triage": "triage",
     "planner": "plan",
     "coach": "coach",
@@ -82,7 +82,7 @@ def build_context(
     extra: dict[str, Any] | None = None,
 ) -> Context:
     from apollo.mcp.registry import MCPRegistry
-    from apollo.memory.facade import build_memory
+    from apollo.memory.facade import LazyMemory
 
     settings = runtime.settings
     skills = SkillRegistry(settings.root / "skills")
@@ -90,7 +90,7 @@ def build_context(
     return Context(
         runtime=runtime,
         clock=clock or SystemClock(settings.app.timezone),
-        memory=build_memory(runtime),
+        memory=LazyMemory(runtime),
         skills=skills,
         mcp=MCPRegistry(settings),
         run_id=run_id or uuid.uuid4().hex[:12],
@@ -128,6 +128,32 @@ def _tier_for(name: str, context: Context, override: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+CAPTURE_PREFIXES = (
+    "remind me to",
+    "remind me",
+    "add ",
+    "log ",
+    "note that",
+    "note:",
+    "capture ",
+    "remember to",
+    "i need to",
+    "i must ",
+    "don't forget",
+    "dont forget",
+    "todo:",
+    "to-do:",
+)
+
+
+def looks_like_capture(text: str) -> bool:
+    """Skip the supervisor for unambiguous capture phrasing (saves a model call)."""
+    low = text.strip().lower()
+    if not low or len(low) > 200 or "?" in low:
+        return False
+    return low.startswith(CAPTURE_PREFIXES)
+
+
 async def route_message(context: Context, text: str) -> RouteDecision:
     agent = build_supervisor(context.settings, context.extra.get("model_overrides", {}).get("supervisor"))
     result = await agent.run(text, deps=context, conversation_id=context.conversation_id)
@@ -326,6 +352,9 @@ async def run_agent_job(job: JobContext) -> dict[str, Any]:
 
     name = payload.get("agent")
     text = payload.get("text") or payload.get("prompt") or ""
+    if not name and looks_like_capture(text):
+        name = "triage"
+        payload["route"] = {"specialist": "triage", "intent": "capture", "rationale": "capture phrasing"}
     if not name:
         decision = await route_message(context, text)
         name = decision.specialist

@@ -326,6 +326,7 @@ APPROVAL_TOOLS = [request_approval]
 
 CAPABILITIES: dict[str, list[Any]] = {
     "db.read": READ_TOOLS,
+    "db.read.capture": [today, list_tasks, list_habits, list_metrics],
     "db.write": WRITE_TOOLS,
     "memory.recall": [recall_memory],
     "memory.remember": [remember],

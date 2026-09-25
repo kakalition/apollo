@@ -54,7 +54,6 @@ COMMANDS = [
     BotCommand(command="settings", description="Show settings"),
 ]
 
-DRAIN_INTERVAL_SECONDS = 5.0
 
 
 class ApolloBot:
@@ -149,13 +148,14 @@ class ApolloBot:
     async def _drain_loop(self) -> None:
         if self.chat_id is None:
             return
+        interval = max(0.5, self.runtime.settings.telegram.drain_interval_seconds)
         drainer = NotificationDrainer(self.api, self.runtime, chat_id=self.chat_id)
         while not self._stop.is_set():
             try:
                 await drainer.drain()
             except Exception as exc:
                 log.warning("telegram.drain_failed", error=str(exc))
-            await asyncio.sleep(DRAIN_INTERVAL_SECONDS)
+            await asyncio.sleep(interval)
 
 
 def _user_id(update: object) -> int | None:

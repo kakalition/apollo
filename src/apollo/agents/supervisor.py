@@ -24,11 +24,12 @@ class RouteDecision(BaseModel):
 
 def build_supervisor(settings: Settings, model: Any | None = None) -> Agent[Context, RouteDecision]:
     return Agent(
-        model or build_model(settings, "triage"),
+        model or build_model(settings, "light"),
         output_type=RouteDecision,
         deps_type=Context,
         name="supervisor",
         instructions=SUPERVISOR,
+        retries=2,
     )
 
 

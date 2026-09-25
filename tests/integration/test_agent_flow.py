@@ -103,3 +103,13 @@ def test_structured_agents_stream_with_a_keepalive_not_stream_text(runtime) -> N
     assert result.error is None
     assert sink.finished is True and sink.cancelled is False
     assert sink.pushes, "expected a keepalive draft update"
+
+
+def test_capture_phrasing_skips_supervisor() -> None:
+    from apollo.agents.runtime import looks_like_capture
+
+    assert looks_like_capture("remind me to water the plants")
+    assert looks_like_capture("add buy stamps")
+    assert looks_like_capture("log 7 hours of sleep")
+    assert not looks_like_capture("what should I focus on today?")
+    assert not looks_like_capture("I want to get fit and run a half marathon")

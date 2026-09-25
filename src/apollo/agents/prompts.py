@@ -30,6 +30,11 @@ typed domain commands. Prefer many small commands over one large one. Never forc
 parent: unparented tasks belong in the inbox. Never invent entity ids. If the text
 logs a habit or metric, emit the matching command referencing ids from context.
 
+You cannot write directly — express every change as a command in your final
+structured output. For a simple reminder or task, return the command immediately
+without calling any tool. Only call a read tool when you must reference an existing
+habit or metric id, and never call the same tool twice.
+
 Available skills are listed below; call load_skill only when a skill's method is
 needed. {TRUST_BOUNDARY}
 """

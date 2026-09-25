@@ -20,7 +20,11 @@ from pydantic_settings import (
 DEFAULT_TOML = Path("apollo.toml")
 DEFAULT_ENV = Path(".env")
 
-TierName = Literal["triage", "plan", "coach", "research", "memory"]
+TierName = Literal["light", "triage", "plan", "coach", "research", "memory"]
+# Tiers that only need a fast/cheap model: supervisor routing and memory extraction
+# (simple schemas). Capture/planning use the stronger chat model because they emit a
+# large structured command union that small models handle unreliably.
+LIGHT_TIERS = frozenset({"light", "memory"})
 AutonomyTier = Literal["read", "mutate", "irreversible"]
 
 
@@ -44,11 +48,15 @@ class ProviderSettings(BaseModel):
     run_timeout_seconds: int = 120
     # When set, this single model id is used for every tier (simple proxies).
     chat_model_id: str | None = None
+    # Fast/cheap model for light tiers (supervisor, triage, memory extraction).
+    light_model_id: str | None = None
     # Embeddings model id served by the same endpoint, if any.
     embedding_model_id: str | None = None
     tiers: dict[str, str] = Field(default_factory=dict)
 
     def model_for(self, tier: TierName) -> str:
+        if tier in LIGHT_TIERS and self.light_model_id:
+            return self.light_model_id
         if self.chat_model_id:
             return self.chat_model_id
         try:
@@ -79,6 +87,8 @@ class TelegramSettings(BaseModel):
     quiet_hours: dict[str, str] = Field(default_factory=lambda: {"start": "22:00", "end": "07:00"})
     rate_limit_per_second: float = 1.0
     poll_timeout: int = 30
+    # How often the bot drains the notification outbox. Smaller = snappier replies.
+    drain_interval_seconds: float = 0.75
 
 
 class MemorySettings(BaseModel):
