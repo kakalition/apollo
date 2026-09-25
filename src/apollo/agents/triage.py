@@ -13,9 +13,9 @@ from pydantic_ai import Agent, RunContext
 
 from apollo.agents.context import Context
 from apollo.agents.models import build_model
-from apollo.agents.prompts import TRIAGE, with_skills
+from apollo.agents.prompts import TRIAGE
 from apollo.config import Settings
-from apollo.domain.commands import CommandBatch
+from apollo.domain.commands import CaptureResult
 from apollo.domain.models import CheckInKind
 
 
@@ -40,18 +40,15 @@ def _reference_block(ctx: RunContext[Context]) -> str:
     return "Reference ids (use these, never invent):\n" + "\n".join(lines)
 
 
-def _instructions(ctx: RunContext[Context]) -> str:
-    return with_skills(TRIAGE, ctx.deps.skills.summary_text() or "(none)")
-
-
 def _instructions_with_refs(ctx: RunContext[Context]) -> str:
-    return f"{_instructions(ctx)}\n\n{_reference_block(ctx)}"
+    # No skill summaries: capture does not need them, and every token costs latency.
+    return f"{TRIAGE}\n\n{_reference_block(ctx)}"
 
 
-def build_triage(settings: Settings, model: Any | None = None) -> Agent[Context, CommandBatch]:
-    agent: Agent[Context, CommandBatch] = Agent(
+def build_triage(settings: Settings, model: Any | None = None) -> Agent[Context, CaptureResult]:
+    agent: Agent[Context, CaptureResult] = Agent(
         model or build_model(settings, "triage"),
-        output_type=CommandBatch,
+        output_type=CaptureResult,
         deps_type=Context,
         name="triage",
         instructions=_instructions_with_refs,

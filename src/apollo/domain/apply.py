@@ -47,6 +47,177 @@ def _enum(value: Any, enum_cls: Any, default: Any) -> Any:
         return default
 
 
+def capture_result_to_commands(result: Any) -> list[Command]:
+    """Convert the slim Triage output into the full command types."""
+    from apollo.domain.commands import (
+        CaptureNote,
+        CaptureTask,
+        CaptureTasks,
+        LogCheckIn,
+        LogMetric,
+    )
+
+    tasks: list[CaptureTask] = []
+    commands: list[Command] = []
+    for item in result.items:
+        kind = getattr(item, "kind", None)
+        if kind == "task":
+            tasks.append(
+                CaptureTask(
+                    title=item.title,
+                    due_at=parse_datetime(item.due_at),
+                    priority=item.priority,
+                )
+            )
+        elif kind == "checkin":
+            commands.append(
+                LogCheckIn(
+                    checkin_kind=item.checkin_kind,
+                    ref_id=item.ref_id,
+                    value_num=item.value_num,
+                    note=item.note,
+                )
+            )
+        elif kind == "metric":
+            commands.append(
+                LogMetric(
+                    metric_id=item.metric_id,
+                    name=item.name,
+                    unit=item.unit,
+                    value=item.value,
+                )
+            )
+        elif kind == "note":
+            commands.append(CaptureNote(body=item.body, title=item.title))
+    if tasks:
+        commands.insert(0, CaptureTasks(tasks=tasks))
+    return commands
+
+
+def apply_plan(
+    session: Session,
+    result: Any,
+    *,
+    actor: str = "agent",
+    run_id: str | None = None,
+) -> list[str]:
+    """Apply the nested planner output, wiring parents to freshly created ids."""
+    from apollo.tools import db_tools
+
+    out: list[str] = []
+
+    def _task(task: Any, *, goal_id: int | None = None, project_id: int | None = None) -> None:
+        created = repo.create_task(
+            session,
+            m.Task(
+                title=task.title,
+                due_at=parse_datetime(task.due_at),
+                priority=task.priority,
+                notes=task.notes,
+                goal_id=goal_id,
+                project_id=project_id,
+            ),
+            actor=actor,
+        )
+        out.append(f"task #{created.id} {created.title}")
+
+    for goal in result.goals:
+        created_goal = repo.create_goal(
+            session,
+            m.Goal(
+                title=goal.title,
+                outcome=goal.outcome,
+                success_criteria=goal.success_criteria,
+                horizon_end=parse_datetime(goal.horizon_end),
+            ),
+            actor=actor,
+        )
+        goal_id = created_goal.id
+        out.append(f"goal #{goal_id} {created_goal.title}")
+
+        if goal.practice is not None:
+            practice = repo.create_practice(
+                session,
+                m.Practice(
+                    name=goal.practice.name,
+                    goal_id=goal_id,
+                    cadence=goal.practice.cadence,
+                    description=goal.practice.description,
+                ),
+            )
+            out.append(f"practice #{practice.id} {practice.name}")
+            if practice.id is None:  # pragma: no cover - repo always assigns an id
+                raise RuntimeError("practice id missing after create")
+            for habit in goal.practice.habits:
+                created_habit = repo.create_habit(
+                    session,
+                    m.Habit(
+                        practice_id=practice.id,
+                        name=habit.name,
+                        rrule=habit.rrule,
+                        target_per_period=habit.target_per_period,
+                    ),
+                )
+                out.append(f"habit #{created_habit.id} {created_habit.name}")
+            for metric in goal.practice.metrics:
+                created_metric = repo.create_metric(
+                    session,
+                    m.Metric(
+                        goal_id=goal_id,
+                        name=metric.name,
+                        unit=metric.unit,
+                        target=metric.target,
+                        direction=_enum(metric.direction, m.Direction, m.Direction.INCREASE),
+                    ),
+                )
+                out.append(f"metric #{created_metric.id} {created_metric.name}")
+
+        for project in goal.projects:
+            created_project = repo.create_project(
+                session,
+                m.Project(
+                    title=project.title,
+                    goal_id=goal_id,
+                    done_when=project.done_when,
+                    due_at=parse_datetime(project.due_at),
+                ),
+            )
+            out.append(f"project #{created_project.id} {created_project.title}")
+            for task in project.tasks:
+                _task(task, goal_id=goal_id, project_id=created_project.id)
+
+        for task in goal.tasks:
+            _task(task, goal_id=goal_id)
+
+    for task in result.tasks:
+        created = db_tools.create_task(
+            session,
+            title=task.title,
+            due_at=parse_datetime(task.due_at),
+            priority=task.priority,
+            notes=task.notes,
+        )
+        out.append(f"task #{created['id']} {created['title']}")
+    return out
+
+
+def apply_capture(
+    session: Session,
+    result: Any,
+    *,
+    actor: str = "agent",
+    run_id: str | None = None,
+    vault: Any | None = None,
+) -> list[str]:
+    return apply_batch(
+        session,
+        capture_result_to_commands(result),
+        actor=actor,
+        run_id=run_id,
+        vault=vault,
+    )
+
+
 def apply_batch(
     session: Session,
     commands: list[Command],

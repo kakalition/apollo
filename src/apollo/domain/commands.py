@@ -161,7 +161,118 @@ Command = Annotated[
 
 
 class CommandBatch(BaseModel):
-    """Triage output: zero or more commands plus an optional clarifying question."""
+    """Planner/Coach output: the full command union plus an optional reply."""
 
     commands: list[Command] = Field(default_factory=list)
+    reply: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Slim capture schema (triage)
+#
+# The full Command union has ~26 variants, which is hard and slow for models to
+# emit. Capture only needs four things, so triage returns this small shape; the
+# domain layer converts it to real commands.
+# ---------------------------------------------------------------------------
+class CaptureTaskItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["task"] = "task"
+    title: str
+    due_at: str | None = None
+    priority: int = 3
+
+
+class CaptureCheckinItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["checkin"] = "checkin"
+    checkin_kind: str = "reflection"  # habit | metric | task | reflection
+    ref_id: int | None = None
+    value_num: float | None = None
+    note: str | None = None
+
+
+class CaptureMetricItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["metric"] = "metric"
+    value: float
+    metric_id: int | None = None
+    name: str | None = None
+    unit: str | None = None
+
+
+class CaptureNoteItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["note"] = "note"
+    body: str
+    title: str | None = None
+
+
+CaptureItem = Annotated[
+    CaptureTaskItem | CaptureCheckinItem | CaptureMetricItem | CaptureNoteItem,
+    Field(discriminator="kind"),
+]
+
+
+class CaptureResult(BaseModel):
+    """What Triage returns: a short list of capture items plus an optional reply."""
+
+    items: list[CaptureItem] = Field(default_factory=list)
+    reply: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Slim planning schema (planner)
+#
+# Nested rather than a flat union so no id juggling is needed: a goal owns its
+# practice (with habits/metrics), projects (with tasks) and loose tasks. Much
+# smaller and faster for models to emit than the full Command union.
+# ---------------------------------------------------------------------------
+class PlannedHabit(BaseModel):
+    name: str
+    rrule: str = "FREQ=DAILY"
+    target_per_period: int = 1
+
+
+class PlannedMetric(BaseModel):
+    name: str
+    unit: str | None = None
+    target: float | None = None
+    direction: str = "increase"  # increase | decrease | maintain
+
+
+class PlannedPractice(BaseModel):
+    name: str
+    cadence: str | None = None
+    description: str | None = None
+    habits: list[PlannedHabit] = Field(default_factory=list)
+    metrics: list[PlannedMetric] = Field(default_factory=list)
+
+
+class PlannedTask(BaseModel):
+    title: str
+    due_at: str | None = None
+    priority: int = 3
+    notes: str | None = None
+
+
+class PlannedProject(BaseModel):
+    title: str
+    done_when: str | None = None
+    due_at: str | None = None
+    tasks: list[PlannedTask] = Field(default_factory=list)
+
+
+class PlannedGoal(BaseModel):
+    title: str
+    outcome: str | None = None
+    success_criteria: str | None = None
+    horizon_end: str | None = None
+    practice: PlannedPractice | None = None
+    projects: list[PlannedProject] = Field(default_factory=list)
+    tasks: list[PlannedTask] = Field(default_factory=list)
+
+
+class PlanResult(BaseModel):
+    goals: list[PlannedGoal] = Field(default_factory=list)
+    tasks: list[PlannedTask] = Field(default_factory=list)
     reply: str | None = None

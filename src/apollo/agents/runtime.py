@@ -24,7 +24,7 @@ from apollo.agents.researcher import build_researcher
 from apollo.agents.supervisor import RouteDecision, build_supervisor
 from apollo.agents.triage import build_triage
 from apollo.db.repositories import infra
-from apollo.domain.commands import CommandBatch
+from apollo.domain.commands import CaptureResult, CommandBatch, PlanResult
 from apollo.observability import get_logger
 from apollo.skills.registry import SkillRegistry
 from apollo.tools.clock import Clock, SystemClock
@@ -325,6 +325,10 @@ def _text_of(output: Any) -> str:
         return output
     if isinstance(output, CommandBatch):
         return output.reply or "; ".join(c.kind for c in output.commands)
+    if isinstance(output, CaptureResult):
+        return output.reply or "; ".join(i.kind for i in output.items)
+    if isinstance(output, PlanResult):
+        return output.reply or "; ".join(g.title for g in output.goals)
     if isinstance(output, CoachResult):
         return output.summary
     for attr in ("summary", "question", "interpretation", "recommendation", "reply"):
@@ -366,9 +370,7 @@ async def run_agent_job(job: JobContext) -> dict[str, Any]:
     )
     await _persist(runtime, result, input_text=text, run_id=run_id)
 
-    applied: list[str] = []
-    if isinstance(result.output, CommandBatch):
-        applied = _apply_batch(runtime, result.output, actor=f"agent:{name}", run_id=run_id, context=context)
+    applied = _apply_output(runtime, result.output, actor=f"agent:{name}", run_id=run_id, context=context)
     _notify_result(runtime, name, result, payload, applied)
     return {
         "agent": result.agent,
@@ -388,6 +390,33 @@ def _extras(payload: dict[str, Any]) -> dict[str, Any]:
     if "mcp_toolsets" in payload:
         extras["mcp_toolsets"] = payload["mcp_toolsets"]
     return extras
+
+
+def _apply_output(
+    runtime: Runtime, output: Any, *, actor: str, run_id: str, context: Context
+) -> list[str]:
+    if isinstance(output, CaptureResult):
+        from apollo.domain.apply import apply_capture
+
+        with runtime.db.write() as session:
+            return apply_capture(
+                session, output, actor=actor, run_id=run_id,
+                vault=_vault(runtime),
+            )
+    if isinstance(output, PlanResult):
+        from apollo.domain.apply import apply_plan
+
+        with runtime.db.write() as session:
+            return apply_plan(session, output, actor=actor, run_id=run_id)
+    if isinstance(output, CommandBatch):
+        return _apply_batch(runtime, output, actor=actor, run_id=run_id, context=context)
+    return []
+
+
+def _vault(runtime: Runtime) -> Any:
+    from apollo.tools.vault import Vault
+
+    return Vault(runtime.settings.vault_path)
 
 
 def _apply_batch(runtime: Runtime, batch: CommandBatch, *, actor: str, run_id: str, context: Context) -> list[str]:
@@ -494,11 +523,9 @@ async def run_skill_job(job: JobContext) -> dict[str, Any]:
         stream=_build_stream(payload, runtime),
     )
     await _persist(runtime, result, input_text=f"skill:{skill_name}", run_id=context.run_id)
-    applied: list[str] = []
-    if isinstance(result.output, CommandBatch):
-        applied = _apply_batch(
-            runtime, result.output, actor=f"skill:{skill_name}", run_id=context.run_id, context=context
-        )
+    applied = _apply_output(
+        runtime, result.output, actor=f"skill:{skill_name}", run_id=context.run_id, context=context
+    )
     _notify_result(
         runtime,
         agent_name,
@@ -559,11 +586,9 @@ async def run_agent_once(runtime: Runtime, agent_name: str, text: str) -> str:
     await _persist(runtime, result, input_text=text, run_id=context.run_id)
     if result.error:
         return f"error: {result.error}"
-    applied: list[str] = []
-    if isinstance(result.output, CommandBatch):
-        applied = _apply_batch(
-            runtime, result.output, actor=f"agent:{agent_name}", run_id=context.run_id, context=context
-        )
+    applied = _apply_output(
+        runtime, result.output, actor=f"agent:{agent_name}", run_id=context.run_id, context=context
+    )
     reply = result.output_text or str(result.output)
     if applied:
         reply = f"{reply}\n\nApplied: {'; '.join(applied)}" if reply else f"Applied: {'; '.join(applied)}"

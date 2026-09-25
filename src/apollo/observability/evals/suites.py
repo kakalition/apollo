@@ -16,22 +16,17 @@ TRIAGE_CASES = [
     Case(
         name="single_task",
         inputs="remind me to call the bank tomorrow",
-        expected_output="capture_task",
+        expected_output="task",
     ),
     Case(
         name="multiple_tasks",
         inputs="buy milk, book dentist, and email the landlord",
-        expected_output="capture_tasks",
+        expected_output="tasks",
     ),
     Case(
         name="reflection",
         inputs="today felt heavy, I kept putting off the report",
-        expected_output="log_checkin",
-    ),
-    Case(
-        name="goal_intent",
-        inputs="I want to get fit enough to run a half marathon",
-        expected_output="create_goal",
+        expected_output="checkin",
     ),
 ]
 

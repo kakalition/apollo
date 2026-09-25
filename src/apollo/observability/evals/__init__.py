@@ -31,8 +31,13 @@ async def triage_intent_task(runtime: Runtime, text: str) -> str:
     context = build_context(runtime)
     result = await run_agent(context, "triage", text)
     output = result.output
-    commands = getattr(output, "commands", []) or []
-    return commands[0].kind if commands else "none"
+    items = getattr(output, "items", []) or []
+    if not items:
+        return "none"
+    if len(items) > 1:
+        kinds = {i.kind for i in items}
+        return next(iter(kinds)) + "s" if len(kinds) == 1 else "mixed"
+    return items[0].kind
 
 
 async def skill_selection_task(runtime: Runtime, text: str) -> str:

@@ -192,8 +192,10 @@ union is unreliable on tiny models. `EMBEDDING_MODEL_ID` overrides
 `[embeddings].model`. If a provider serves no embeddings, Apollo falls back to a
 second provider or local `fastembed`.
 
-A typical capture (message → final Telegram reply) lands in **~6–10 s** end to end;
-measure it with `uv run python scripts/bench_capture.py --count 3`.
+A typical capture (message → final Telegram reply) lands in **~2–5 s** end to end;
+planning (goal decomposition) is heavier at **~30–60 s**. Both are tool-free
+single-call agents with slim schemas, and the supervisor is skipped for obvious
+captures. Measure with `uv run python scripts/bench_capture.py --count 4`.
 
 ## Telegram setup
 
