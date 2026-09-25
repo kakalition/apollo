@@ -17,15 +17,15 @@ import argparse
 import random
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 sys.path.insert(0, "src")
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from apollo.bootstrap import bootstrap  # noqa: E402
-from apollo.db import tables as t  # noqa: E402
-from apollo.queue.jobs import enqueue_job  # noqa: E402
+from apollo.bootstrap import bootstrap
+from apollo.db import tables as t
+from apollo.queue.jobs import enqueue_job
 
 TEXTS = [
     "remind me to water the plants",
@@ -37,7 +37,7 @@ TEXTS = [
 
 
 def measure_one(rt, chat: int, rid: str, text: str, timeout: float = 120.0) -> dict:
-    t0 = datetime.now(timezone.utc)
+    t0 = datetime.now(UTC)
     with rt.db.write() as session:
         enqueue_job(
             session,
