@@ -53,15 +53,16 @@ evidence feeds reviews, reviews rewrite practice, and agents do the upkeep.
 | Area | What you get |
 |---|---|
 | **Domain** | Areas, Goals, Practices, Projects, Tasks, Habits, Metrics, Check-ins, Reviews, Journal — with a classification test that keeps the schema honest |
-| **Agents** | Supervisor → triage / planner / coach / researcher; tiered models; typed outputs; per-run `RunLog`; streaming replies with Stop |
-| **Skills** | Markdown-first (`SKILL.md`) with progressive disclosure, hot reload, and optional Python `tools.py` gated by `allowed-tools` |
-| **Memory** | Mem0 over a local Chroma server, API embeddings with a configurable fallback chain, worker-only writes, rebuildable from the vault |
+| **Agents** | Supervisor → one specialist (triage / planner / coach / researcher); no fan-out; capture and planning are **tool-free single calls** with slim typed schemas; per-run `RunLog`; streaming replies with Stop |
+| **Tools** | `db_tools` read/write layer shared by agents, the MCP server and the CLI; coach/researcher get read+write+memory+notify capabilities; write tools are approval-gated by tier |
+| **Skills** | Markdown-first (`SKILL.md`) with progressive disclosure, hot reload and optional Python `tools.py` gated by `allowed-tools`; loaded on demand by coach/researcher, skipped by the fast capture/plan paths |
+| **Memory** | Mem0 over a local Chroma server, API embeddings with a configurable fallback chain, worker-only writes, lazily constructed (no cost unless used) |
 | **Scheduling** | Cron, event subscriptions and safe registered condition predicates; cooldowns, timezone-aware, quiet hours |
 | **Telegram** | Native Bot API 10.3: streaming drafts, rich HTML, inline keyboards, approvals, polls, reactions, deep links, inline mode |
 | **MCP** | Config-driven client registry (default-deny allowlists, namespacing) and a curated stdio server with approval-aware writes |
 | **Safety** | Read free · mutate auto+audited · irreversible requires approval; single-user allowlist; path-sandboxed vault; no shell |
 | **Ops** | `apollo doctor`, migrations, pause/resume kill switch, job queue inspection, structured logs, opt-in OTel/Logfire tracing |
-| **Quality** | Ruff, Pyright, 98 tests, `pydantic-evals` suites, CI on every push |
+| **Quality** | Ruff, Pyright, 135 tests, `pydantic-evals` suites, CI on every push |
 
 ## Architecture
 
@@ -105,6 +106,68 @@ outbox for every side effect.
 heartbeat, exponential backoff to dead-letter, and a DB advisory lock enforcing a
 single dispatcher. Side effects are never performed inside a transaction — domain
 mutation and its outbox event commit together.
+
+## Request flow
+
+One message becomes at most **two** model calls. There is no parallel fan-out: the
+supervisor picks a specialist and only that specialist runs.
+
+```
+Telegram text
+   │
+   ├─ capture phrasing ("remind me…", "add…", "log…")  ──► triage      (1 call)
+   │        tool-free · slim CaptureResult · parent ids injected
+   │
+   └─ anything else ──► supervisor (1 call) ──► one of:
+                            triage    tool-free · slim CaptureResult
+                            planner   tool-free · slim nested PlanResult
+                            coach     tools + memory + skills
+                            researcher tools + memory + skills + MCP toolsets
+   │
+   ▼  typed output
+apply (capture/plan)  or  tools (coach/researcher)   ← writes happen here, with events
+   │
+   ├─ events → outbox reactions (memory.add, notify.send, approval.resume)
+   └─ notifications → Telegram drainer → sendMessage (Markdown → safe HTML)
+```
+
+| Specialist | Tools | Skills | Output |
+|---|---|---|---|
+| supervisor | none | – | `RouteDecision` |
+| triage | **none** (ids injected into instructions) | – | `CaptureResult` (task/checkin/metric/note) |
+| planner | **none** (existing goal/task ids injected) | – | `PlanResult` (nested goal→practice→projects→tasks) |
+| coach | read, write, memory.recall, notify | summaries + on-demand `load_skill` | `CoachResult` |
+| researcher | read, memory.recall, notify, approval + MCP toolsets | summaries + `load_skill` | `ResearchResult` |
+
+Tools are real and still central — `db_tools` is what the **MCP server** exposes to
+Claude Desktop/Kilo/Cursor, and coach/researcher use it as agent tools. Triage and
+planner are deliberately *tool-free* fast paths: a tool-call loop cost 120 s timeouts
+and duplicated writes, so they emit one typed object instead. Skills remain fully
+functional for coach/researcher (progressive disclosure: only summaries are in the
+prompt until `load_skill` is called).
+
+## Performance
+
+Measured on the maintainer's setup (OpenRouter `deepseek/deepseek-v4-flash-0731`,
+local Chroma), message → final Telegram reply:
+
+| Path | Avg | Range | Notes |
+|---|---|---|---|
+| Capture (“remind me to …”) | **3.4 s** | 2.5–4.9 s | 1 model call, ~2.2 s run, rest is claim + drain + send |
+| Question / chat | ~+1 call | — | supervisor routing adds one model call (~1.5–6 s, provider-bound) |
+| Goal / replan | **~55 s** | — | one larger call (~1.2k output tokens) + one retry |
+
+Iterations that got there: 14 s → 7.9 s (tool-free agents + lazy memory + faster
+poll/drain) → **3.4 s** (slim capture schema). Reproduce with:
+
+```bash
+scripts/run.sh start
+uv run python scripts/bench_capture.py --count 4
+```
+
+The big levers, in order: number of tool-call round trips, output schema size,
+eager service construction (Mem0), and poll/drain intervals. A single provider trip
+measures ~1.3 s and varies; provider latency is the floor.
 
 ## Quick start
 
@@ -250,10 +313,12 @@ model-tier: coach
 <instructions / methodology / output format>
 ```
 
-The registry loads frontmatter only, keeping the supervisor prompt small; full
-instructions load on demand. Optional `skills/<slug>/tools.py` adds Python tools.
-Built-ins: `capture`, `daily-briefing`, `evening-checkin`, `weekly-review`,
-`goal-decompose`, `drift-detect`, `deep-research`.
+The registry loads frontmatter only, keeping prompts small; full instructions load
+on demand. Coach and researcher see the skill summaries and can call `load_skill`;
+the tool-free capture/plan paths skip skills for speed. Optional
+`skills/<slug>/tools.py` adds Python tools gated by `allowed-tools`. Built-ins:
+`capture`, `daily-briefing`, `evening-checkin`, `weekly-review`, `goal-decompose`,
+`drift-detect`, `deep-research`.
 
 ## Scheduling
 

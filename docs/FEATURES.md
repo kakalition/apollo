@@ -87,31 +87,38 @@ Five processes over one SQLite DB (WAL): `apollo telegram`, `apollo worker`,
 
 ### 2.3 Agent runtime ✅
 
-- **Supervisor → specialists**: `triage`, `planner`, `coach`, `researcher`.
-- Tier routing (`triage` / `plan` / `coach` / `research` / `memory`).
-- Typed outputs: `CommandBatch`, `RouteDecision`, `CoachResult`, `ResearchResult`.
+- **Supervisor → exactly one specialist**: `triage`, `planner`, `coach`, `researcher`.
+  No fan-out/parallel agents; a message costs one routing call plus one specialist.
+- Tier routing (`light` / `triage` / `plan` / `coach` / `research` / `memory`).
+- Typed outputs: `CaptureResult` (slim, triage), `PlanResult` (nested, planner),
+  `CommandBatch` (legacy/full), `RouteDecision`, `CoachResult`, `ResearchResult`.
+- **Tool-free fast paths**: triage and planner call no tools — entity ids are
+  injected into their instructions — so a capture is a single model call.
 - Per-run `RunLog` (agent, tier, model, tool calls, tokens, duration, status).
-- Least-privilege tool capabilities: `db.read`, `db.write`, `memory.recall`,
+- Tool capabilities (coach/researcher): `db.read`, `db.write`, `memory.recall`,
   `memory.remember`, `notify.telegram`, `skills.load`, `approval.request`.
 - **Streaming** to Telegram drafts + **Stop** (cross-process cancellation via DB flag) ✅.
 - OpenAI-compatible transport adapter that repairs non-standard provider `metadata`.
 
 ### 2.4 Skills ✅
 
-Markdown-first with progressive disclosure: the supervisor sees only `name: description`;
-the body loads on demand via `load_skill`. Optional `tools.py` gated by `allowed-tools`.
-Hot reload via watchdog.
+Markdown-first with progressive disclosure: coach and researcher see only
+`name: description` and load the body on demand via `load_skill`. The tool-free
+capture/plan paths skip skills for speed. Optional `tools.py` gated by
+`allowed-tools`. Hot reload via watchdog.
 
 Built-ins: `capture`, `daily-briefing`, `evening-checkin`, `weekly-review`,
 `goal-decompose`, `drift-detect`, `deep-research`.
 
 ### 2.5 Tools ✅
 
-`db_tools` (all reads/writes), `Notifier` (writes to the outbox, never sends inline),
-clock/time windows, vault.
+`db_tools` (all reads/writes) is shared by coach/researcher agent tools, the MCP
+server and the CLI; triage/planner are tool-free. `Notifier` writes to the outbox
+(never sends inline); plus clock/time windows and the vault.
 
 ### 2.6 MCP — both directions ✅
 
+- Capture phrasing often skips the supervisor entirely (heuristic bypass).
 - **Client (consume)**: config-declared servers, default-deny allowlist, namespacing
   (`vault.read`), stdio/SSE/streamable-HTTP, cwd pinned to the project root. The
   bundled `vault` server is verified live.
@@ -199,7 +206,7 @@ Each case is written as **you say → Apollo does → guardrail**.
 
 | # | You say | Apollo does |
 |---|---|---|
-| 1 | “remind me to call the bank tomorrow” | `capture_task(due=tomorrow)` → `task.created`; ✅ ack reaction on your message |
+| 1 | “remind me to call the bank tomorrow” | triage returns `CaptureResult` → `task` created; ack reaction on your message |
 | 2 | “buy milk, book dentist, email landlord” | three `capture_task`s in one batch |
 | 3 | “add ‘research standing desk’ to the inbox” | unparented task (inbox); parents are never forced |
 | 4 | “note that the landlord is coming Thursday at 9” | `capture_note` → markdown in vault → FTS + `journal.captured` → `memory.add` |
