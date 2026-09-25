@@ -76,14 +76,16 @@ def test_approval_keyboard_disabled_after_decision() -> None:
     assert all(btn.get("disabled") for btn in decided["inline_keyboard"][0])
 
 
-def test_copy_text_button_and_reply_keyboard() -> None:
+def test_copy_text_button() -> None:
     markup = task_keyboard(3)
     flat = [btn for row in markup["inline_keyboard"] for btn in row]
     assert any(btn.get("copy_text", {}).get("text") == "task #3" for btn in flat)
-    from apollo.telegram.keyboards import today_reply_keyboard
 
-    reply = today_reply_keyboard()
-    assert reply["is_persistent"] is True and reply["one_time_keyboard"] is False
+
+def test_remove_reply_keyboard_markup() -> None:
+    from apollo.telegram.keyboards import remove_reply_keyboard
+
+    assert remove_reply_keyboard() == {"remove_keyboard": True}
 
 
 def test_inline_keyboard_shape() -> None:

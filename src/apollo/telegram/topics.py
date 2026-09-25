@@ -32,7 +32,7 @@ TOPICS: list[Topic] = [
     Topic("inbox", "📥 Inbox", "Capture anything; unfiled tasks land here."),
     Topic("goals", "🎯 Goals", "Goal dashboards and decomposition plans."),
     Topic("practices", "🔁 Practices & Habits", "Cadence, streaks and habit prompts."),
-    Topic("today", "✅ Today", "Today's focus, one-tap check-ins, reply keyboard."),
+    Topic("today", "✅ Today", "Today's focus and check-ins."),
     Topic("metrics", "📊 Metrics", "Metric trends and targets."),
     Topic("journal", "📝 Journal", "Notes and journal entries."),
     Topic("reviews", "🪞 Reviews", "Daily/weekly/monthly reviews."),

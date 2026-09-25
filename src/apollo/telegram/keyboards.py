@@ -111,20 +111,6 @@ def habit_keyboard(habit_id: int) -> dict[str, Any]:
     )
 
 
-def today_reply_keyboard() -> dict[str, Any]:
-    """Persistent one-tap check-in keyboard for the Today topic."""
-    return {
-        "keyboard": [
-            [{"text": "✅ Done"}, {"text": "⏭ Skip"}, {"text": "🕐 Later"}],
-            [{"text": "📝 Note"}, {"text": "🎤 Voice"}],
-        ],
-        "is_persistent": True,
-        "resize_keyboard": True,
-        "one_time_keyboard": False,
-        "input_field_placeholder": "Log it, or type anything…",
-    }
-
-
 def remove_reply_keyboard() -> dict[str, Any]:
     return {"remove_keyboard": True}
 

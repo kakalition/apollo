@@ -238,7 +238,7 @@ Each case is written as **you say → Apollo does → guardrail**.
 | 22 | 07:00 cron | `briefing.generate` → focus / habits / metrics / watch-out / one remembered context |
 | 23 | `/today` | briefing on demand (streamed draft, then final) |
 | 24 | `/focus` | ranked “what should I do now” with reasons (overdue > due today > high priority > habit due) |
-| 25 | reply-keyboard tap | `✅ Done · ⏭ Skip · 🕐 Later · 📝 Note · 🎤 Voice` ◻️ currently maps to text, not full habit logging |
+| 25 | one-tap actions | task/habit messages carry inline buttons (`Done` / `Snooze` / `Skip`); no persistent reply keyboard is ever installed |
 | 26 | 21:00 cron | `evening-checkin` skill asks ≤5 questions; poll mapping exists for `poll_answer` ◻️ (sending not auto-wired) |
 | 27 | quiet hours 22:00–07:00 | non-urgent notifications buffered until 07:00 |
 

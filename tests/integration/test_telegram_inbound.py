@@ -161,17 +161,24 @@ def test_start_help_renders_html_and_clears_keyboard(runtime) -> None:
     assert "topic" not in call["text"].lower()
 
 
-def test_today_offers_reply_keyboard_contextually(runtime) -> None:
+def test_today_never_installs_a_reply_keyboard(runtime) -> None:
     runtime.settings.telegram.topic_routing = False
     api = _CapturingAPI()
     asyncio.run(
         dispatch(runtime, api, Update(update_id=1, message=_message("/today")), TopicRouter())  # pyright: ignore[reportArgumentType]
     )
     assert api.calls, "expected an acknowledgement"
-    markup = api.calls[0]["reply_markup"]
-    assert markup["is_persistent"] is True
-    buttons = [b["text"] for row in markup["keyboard"] for b in row]
-    assert len(buttons) == 5
+    assert api.calls[0]["reply_markup"] is None
     with runtime.db.session() as session:
         jobs = list(session.execute(select(t.Job)).scalars())
     assert any(job.kind == "skill.run" for job in jobs)
+
+
+def test_settings_clears_any_persistent_keyboard(runtime) -> None:
+    runtime.settings.telegram.topic_routing = False
+    api = _CapturingAPI()
+    asyncio.run(
+        dispatch(runtime, api, Update(update_id=1, message=_message("/settings")), TopicRouter())  # pyright: ignore[reportArgumentType]
+    )
+    assert api.calls, "expected a settings reply"
+    assert api.calls[-1]["reply_markup"] == {"remove_keyboard": True}

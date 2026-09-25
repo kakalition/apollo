@@ -18,7 +18,6 @@ from apollo.telegram.keyboards import (
     decode,
     inline_result_article,
     remove_reply_keyboard,
-    today_reply_keyboard,
 )
 from apollo.telegram.models import CallbackQuery, InlineQuery, Message, PollAnswer, Update
 from apollo.telegram.render import RichDocument, chunk, escape
@@ -221,9 +220,7 @@ async def _handle_command(
             runtime, skill="daily-briefing", text="Produce today's briefing.",
             topic="today", message_thread_id=thread, telegram_user_id=user_id,
         )
-        # The one-tap check-in keyboard is offered contextually with the day's plan,
-        # not on every /start.
-        await _reply(api, message, "Putting your day together…", reply_markup=today_reply_keyboard())
+        await _reply(api, message, "Putting your day together…")
         return
 
     if command == "/pause":
@@ -453,7 +450,12 @@ async def _show_settings(runtime: Runtime, api: TelegramAPI, message: Message) -
         f"briefing: {briefing}",
         f"quiet hours: {runtime.settings.telegram.quiet_hours.get('start')} to {runtime.settings.telegram.quiet_hours.get('end')}",
     ]
-    await _reply(api, message, "<b>Settings</b>\n" + "\n".join(escape(line) for line in lines), parse_mode="HTML")
+    await _reply(
+        api, message,
+        "<b>Settings</b>\n" + "\n".join(escape(line) for line in lines),
+        parse_mode="HTML",
+        reply_markup=remove_reply_keyboard(),
+    )
 
 
 async def _reply(api: TelegramAPI, message: Message, text: str, *, parse_mode: str | None = None, reply_markup: dict[str, Any] | None = None) -> None:
