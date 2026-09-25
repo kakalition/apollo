@@ -6,13 +6,16 @@ Writes go through the repositories (audit + outbox events). Approval gating is a
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from apollo.db import tables as t
 from apollo.db.repositories import domain as repo
 from apollo.db.repositories import logs as logrepo
+from apollo.db.repositories.base import to_model
 from apollo.domain import models as m
 from apollo.tools.clock import Clock
 from apollo.tools.time import day_window, is_due, week_window
@@ -189,7 +192,34 @@ def create_project(session: Session, *, title: str, **fields: Any) -> dict[str, 
     return _dump(repo.create_project(session, m.Project(title=title, **fields)))
 
 
+def find_recent_duplicate_task(
+    session: Session, title: str, due_at: datetime | None, *, within_minutes: int = 10
+) -> m.Task | None:
+    """Detect the same task captured twice in quick succession.
+
+    Agent retries (and a model calling a write tool plus emitting the same command)
+    otherwise produce duplicate open tasks.
+    """
+    since = _now() - timedelta(minutes=within_minutes)
+    stmt = (
+        select(t.Task)
+        .where(t.Task.title == title)
+        .where(t.Task.status.in_([m.TaskStatus.TODO.value, m.TaskStatus.DOING.value]))
+        .where(t.Task.created_at >= since)
+    )
+    if due_at is None:
+        stmt = stmt.where(t.Task.due_at.is_(None))
+    else:
+        stmt = stmt.where(t.Task.due_at == due_at)
+    row = session.execute(stmt.order_by(t.Task.id.desc())).scalars().first()
+    return to_model(m.Task, row) if row is not None else None
+
+
 def create_task(session: Session, *, title: str, **fields: Any) -> dict[str, Any]:
+    due_at = fields.get("due_at")
+    duplicate = find_recent_duplicate_task(session, title, due_at)
+    if duplicate is not None:
+        return _dump(duplicate)
     return _dump(repo.create_task(session, m.Task(title=title, **fields)))
 
 

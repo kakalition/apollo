@@ -74,20 +74,19 @@ def apply_command(
 ) -> str:
     match command:
         case CaptureTask():
-            task = repo.create_task(
+            from apollo.tools import db_tools
+
+            task = db_tools.create_task(
                 session,
-                m.Task(
-                    title=command.title,
-                    notes=command.notes,
-                    due_at=parse_datetime(command.due_at),
-                    priority=command.priority,
-                    project_id=command.project_id,
-                    goal_id=command.goal_id,
-                    practice_id=command.practice_id,
-                ),
-                actor=actor,
+                title=command.title,
+                notes=command.notes,
+                due_at=parse_datetime(command.due_at),
+                priority=command.priority,
+                project_id=command.project_id,
+                goal_id=command.goal_id,
+                practice_id=command.practice_id,
             )
-            return f"task #{task.id} {task.title}"
+            return f"task #{task['id']} {task['title']}"
 
         case CaptureTasks():
             parts = [

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from apollo.db.repositories import domain as repo
 from apollo.domain import models as m
 from apollo.domain.apply import apply_command
@@ -87,3 +89,20 @@ def test_list_tools_tolerate_loose_status_filters(db) -> None:
         from apollo.db.repositories import logs as logrepo
 
         assert logrepo.last_checkin_in(session, m.CheckInKind.REFLECTION) is not None
+
+
+def test_capture_task_is_deduped_within_window(db) -> None:
+    from datetime import datetime
+
+    from apollo.domain.commands import CaptureTask
+    from apollo.tools import db_tools
+
+    due = datetime(2026, 3, 2, 14, 0, tzinfo=UTC)
+    payload = {"title": "Call the dentist", "due_at": due.isoformat()}
+    with db.write() as session:
+        first = apply_command(session, CaptureTask.model_validate(payload))
+        second = apply_command(session, CaptureTask.model_validate(payload))
+    assert first == second  # same task, not a duplicate
+    with db.session() as session:
+        tasks = db_tools.list_tasks(session)
+    assert len(tasks) == 1
